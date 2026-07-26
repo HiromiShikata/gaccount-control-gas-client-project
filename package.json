@@ -1,0 +1,25 @@
+{
+  "name": "gaccount-control-gas-client-project",
+  "version": "1.0.0",
+  "description": "Parameterized calendar free/busy [HOLD] mirror as a shared Google Apps Script",
+  "license": "ISC",
+  "scripts": {
+    "build": "tsgo --noEmit",
+    "bundle": "node esbuild.config.js",
+    "test": "jest",
+    "format": "prettier --write \"**/*.+(ts|js|json)\"",
+    "format:check": "prettier --check \"**/*.+(ts|js|json)\""
+  },
+  "devDependencies": {
+    "@google/clasp": "3.0.6-alpha",
+    "@types/google-apps-script": "2.0.11",
+    "@types/jest": "30.0.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "esbuild": "0.28.0",
+    "esbuild-gas-plugin": "0.10.0",
+    "jest": "30.4.2",
+    "prettier": "3.9.5",
+    "ts-jest": "29.4.11",
+    "typescript": "5.9.2"
+  }
+}
