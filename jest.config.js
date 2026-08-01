@@ -1,8 +1,16 @@
 module.exports = {
-  preset: 'ts-jest',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.ts?$': ['ts-jest', { tsconfig: 'tsconfig.jest.json' }],
+    '^.+\\.ts$': [
+      '@swc/jest',
+      {
+        jsc: {
+          parser: { syntax: 'typescript' },
+          target: 'es2019',
+        },
+        module: { type: 'commonjs' },
+      },
+    ],
   },
   transformIgnorePatterns: ['<rootDir>/node_modules/'],
 };
