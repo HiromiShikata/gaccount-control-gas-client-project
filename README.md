@@ -99,6 +99,11 @@ Apps Script content API this project pushes with. `clasp login` always requests
 registered project when `main` changes, and on manual dispatch. Each project is
 a separate matrix job, so one failing account does not stop the others.
 
+The push replaces the target project's entire file set with the bundle, so a
+file that exists only inside a client project is removed by the next run. This
+is what makes every registered account converge on the same script, and it means
+a project MUST NOT be edited by hand once it is registered.
+
 The workflow reads these repository secrets. Account addresses and script ids
 are never committed; the repository refers to each account only by an opaque
 key such as `C1`.
