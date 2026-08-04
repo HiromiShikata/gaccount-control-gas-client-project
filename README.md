@@ -46,21 +46,51 @@ silent fallback to a hardcoded value.
 - `MEETING_OK_TAG` — the opt-in meeting-ok tag matched in hub event titles.
 - `MEETING_OK_TITLE` — the placeholder title used for meeting-ok hub events.
 
+The values are written by `setup`, so they are not entered by hand. `sync` reads
+them at runtime and skips the run when one is absent.
+
 ## Client setup
 
+`setup` performs the three project-side operations in one call: it writes the
+Script Properties, subscribes the account to the hub calendar, and installs the
+15-minute trigger for `sync`. It reads its values from `CLIENT_SETUP_CONFIG`,
+which `npm run generate:client-setup-config` writes into `dist` from environment
+variables, so no account-specific value is committed to this repository.
+
 1. Install dependencies: `npm install`.
-2. Create the Apps Script project and link it: copy `.clasp.json.example` to
-   `.clasp.json` and set `scriptId` to your Apps Script project id (or run
-   `npx clasp create --type standalone` and keep `"rootDir": "dist"`).
-3. Bundle and push the code: `npm run bundle && npx clasp push`.
-4. In the Apps Script project settings, add the Script Properties listed above.
-5. Run `createTrigger` once from the Apps Script editor to install the
-   15-minute trigger for `sync`.
+2. Enable the Apps Script API for the account at
+   https://script.google.com/home/usersettings .
+3. Authorize clasp for the account: `npx clasp login`.
+4. Create the Apps Script project: `npx clasp create-script --type standalone`,
+   keeping `"rootDir": "dist"` in the resulting `.clasp.json`.
+5. Bundle, generate the setup config, and push:
+   `npm run bundle && HUB_CALENDAR_ID=... SYNC_DAYS=... MEETING_OK_TAG=... MEETING_OK_TITLE=... npm run generate:client-setup-config && npx clasp push --force`.
+6. Run `setup` once from the Apps Script editor and grant the calendar scope on
+   the consent screen.
+
+## Updating every client project
+
+`.github/workflows/deploy-clients.yml` pushes the current bundle to every
+registered project when `main` changes, and on manual dispatch. Each project is
+a separate matrix job, so one failing account does not stop the others.
+
+The workflow reads these repository secrets. Account addresses and script ids
+are never committed; the repository refers to each account only by an opaque
+key such as `C1`.
+
+- `CLIENT_KEYS` — comma-separated opaque keys, for example `C1,C2,C3`.
+- `CLASP_AUTH_{KEY}` — the `.clasprc.json` contents produced by `clasp login`
+  for that account.
+- `SCRIPT_ID_{KEY}` — the Apps Script project id for that account.
+- `SETUP_HUB_CALENDAR_ID`, `SETUP_SYNC_DAYS`, `SETUP_MEETING_OK_TAG`,
+  `SETUP_MEETING_OK_TITLE` — the values written into `CLIENT_SETUP_CONFIG`.
 
 ## Development
 
 - `npm run build` — type check and build with `tsgo`.
 - `npm run bundle` — bundle `src/Code.ts` into `dist/Code.js` for Apps Script.
+- `npm run generate:client-setup-config` — write `dist/ClientSetupConfig.js`
+  from the four environment variables listed above.
 - `npm test` — run the unit tests. The non-interactive form is
   `CI=true npx jest --watchAll=false --ci`.
 - `npm run format` — format the sources with Prettier.

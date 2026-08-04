@@ -1,0 +1,71 @@
+name: Deploy to client projects
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  resolve-client-keys:
+    runs-on: ubuntu-latest
+    outputs:
+      keys: ${{ steps.resolve.outputs.keys }}
+    steps:
+      - name: Resolve client keys
+        id: resolve
+        env:
+          CLIENT_KEYS: ${{ secrets.CLIENT_KEYS }}
+        run: |
+          if [ -z "$CLIENT_KEYS" ]; then
+            echo "CLIENT_KEYS secret is not set." >&2
+            exit 1
+          fi
+          KEYS=$(printf '%s' "$CLIENT_KEYS" | tr -d ' ' | jq -R -c 'split(",")')
+          echo "keys=$KEYS" >> "$GITHUB_OUTPUT"
+
+  push-to-client-project:
+    needs: resolve-client-keys
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        key: ${{ fromJson(needs.resolve-client-keys.outputs.keys) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Bundle for Apps Script
+        run: npm run bundle
+      - name: Generate client setup config
+        env:
+          HUB_CALENDAR_ID: ${{ secrets.SETUP_HUB_CALENDAR_ID }}
+          SYNC_DAYS: ${{ secrets.SETUP_SYNC_DAYS }}
+          MEETING_OK_TAG: ${{ secrets.SETUP_MEETING_OK_TAG }}
+          MEETING_OK_TITLE: ${{ secrets.SETUP_MEETING_OK_TITLE }}
+        run: npm run generate:client-setup-config
+      - name: Write clasp credentials and project file
+        env:
+          CLASP_AUTH: ${{ secrets[format('CLASP_AUTH_{0}', matrix.key)] }}
+          SCRIPT_ID: ${{ secrets[format('SCRIPT_ID_{0}', matrix.key)] }}
+        run: |
+          if [ -z "$CLASP_AUTH" ]; then
+            echo "CLASP_AUTH_${{ matrix.key }} secret is not set." >&2
+            exit 1
+          fi
+          if [ -z "$SCRIPT_ID" ]; then
+            echo "SCRIPT_ID_${{ matrix.key }} secret is not set." >&2
+            exit 1
+          fi
+          printf '%s' "$CLASP_AUTH" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          printf '{"scriptId":"%s","rootDir":"dist"}' "$SCRIPT_ID" > .clasp.json
+      - name: Push to the client Apps Script project
+        run: npx clasp push --force
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json
