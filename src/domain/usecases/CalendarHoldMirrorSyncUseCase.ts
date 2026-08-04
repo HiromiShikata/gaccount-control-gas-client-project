@@ -108,21 +108,11 @@ export class CalendarHoldMirrorSyncUseCase {
   }
 
   private loadConfiguration(): SyncConfiguration {
-    const hubCalendarId = this.configPort.getRequired('HUB_CALENDAR_ID');
-    const syncDaysRaw = this.configPort.getRequired('SYNC_DAYS');
-    const meetingOkTag = this.configPort.getRequired('MEETING_OK_TAG');
-    const meetingOkTitle = this.configPort.getRequired('MEETING_OK_TITLE');
-    const syncDays = Number.parseInt(syncDaysRaw, 10);
-    if (!Number.isInteger(syncDays) || syncDays <= 0) {
-      throw new Error(
-        `SYNC_DAYS must be a positive integer, received "${syncDaysRaw}"`,
-      );
-    }
-    return new SyncConfiguration(
-      hubCalendarId,
-      syncDays,
-      meetingOkTag,
-      meetingOkTitle,
+    return SyncConfiguration.create(
+      this.configPort.getRequired('HUB_CALENDAR_ID'),
+      this.configPort.getRequired('SYNC_DAYS'),
+      this.configPort.getRequired('MEETING_OK_TAG'),
+      this.configPort.getRequired('MEETING_OK_TITLE'),
     );
   }
 
