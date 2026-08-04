@@ -71,18 +71,28 @@ The authorization the account grants MUST NOT include the `cloud-platform`
 scope. A Google Workspace whose administrator has set a Google Cloud session
 length rejects the unattended token refresh of any token carrying that scope,
 answering `invalid_grant` with `error_subtype: rapt_required`, which only a human
-re-authentication can clear. Requesting `script.projects`, `script.deployments`
-and `drive.file` alone keeps the refresh unattended and is sufficient for the
-Apps Script content API this project pushes with. `clasp login` always requests
-`cloud-platform`, so its credentials MUST NOT be used for the deployment.
+re-authentication can clear. Requesting `script.projects`, `script.deployments`,
+`drive.file` and `userinfo.email` alone keeps the refresh unattended and is
+sufficient for the Apps Script content API this project pushes with. Those four
+scopes are the ones `scripts/client-authorization.js` fixes in the source, so the
+authorization command cannot request a Google Cloud scope. `clasp login` always
+requests `cloud-platform`, so its credentials MUST NOT be used for the
+deployment.
 
 1. Install dependencies: `npm install`.
 2. Signed in as the client account, enable the Apps Script API at
    https://script.google.com/home/usersettings .
-3. Authorize the account with `access_type=offline`, `prompt=consent` and only
-   the three scopes above, then exchange the authorization code for a refresh
-   token. The authorization URL can be opened on another device, so the sign-in —
-   including the password and the second factor — can be completed on a phone.
+3. Print the consent URL with
+   `OAUTH_CLIENT_ID=... OAUTH_CLIENT_SECRET=... OAUTH_REDIRECT_PORT=... npm run authorize:client url`,
+   open it, and sign in as the client account. The URL can be opened on another
+   device, so the sign-in — including the password and the second factor — can be
+   completed on a phone; the redirect to the loopback address then fails to load
+   and the authorization code is read out of the address bar. Exchange it with
+   `npm run authorize:client exchange <code>`, which prints the JSON object to
+   store as `CLIENT_AUTH_{KEY}`. The scopes are fixed in the source, so the
+   `cloud-platform` scope cannot be requested by mistake. The printed object
+   contains a refresh token, so it goes straight into the repository secret and
+   MUST NOT be written to a file in this repository.
 4. Create the Apps Script project for the account and note its script id.
 5. Bundle, generate the setup config, and push:
    `npm run bundle && HUB_CALENDAR_ID=... SYNC_DAYS=... MEETING_OK_TAG=... MEETING_OK_TITLE=... npm run generate:client-setup-config && CLIENT_AUTH='{"client_id":"...","client_secret":"...","refresh_token":"..."}' SCRIPT_ID=... npm run push:client`.
@@ -121,6 +131,9 @@ key such as `C1`.
 - `npm run build` — type check and build with `tsgo`.
 - `npm run bundle` — bundle `src/Code.ts` into `dist/Code.js` for Apps Script.
 - `npm run push:client` — push `dist` to one Apps Script project via the REST API.
+- `npm run authorize:client url` — print the consent URL for one account.
+- `npm run authorize:client exchange <code>` — exchange the authorization code
+  and print that account's `CLIENT_AUTH_{KEY}` value.
 - `npm run generate:client-setup-config` — write `dist/ClientSetupConfig.js`
   from the four environment variables listed above.
 - `npm test` — run the unit tests. The non-interactive form is
