@@ -61,16 +61,30 @@ variables, so no account-specific value is committed to this repository.
 them, so running it again on a project that is already set up leaves exactly one
 15-minute trigger rather than doubling the sync frequency.
 
+Each client account needs its own credentials. One credential cannot serve
+several accounts, and no service account is involved, so a client whose
+organisation does not allow service accounts is still supported. The account is
+identified by the `CLASP_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` secret pair that the
+matrix key selects, never by inference.
+
 1. Install dependencies: `npm install`.
-2. Enable the Apps Script API for the account at
+2. Signed in as the client account, enable the Apps Script API at
    https://script.google.com/home/usersettings .
-3. Authorize clasp for the account: `npx clasp login`.
+3. Authorize clasp for the account: `npx clasp login --no-localhost`. This prints
+   an authorization URL to open on another device, so the sign-in — including the
+   password and the second factor — can be completed on a phone, and the
+   redirected URL is pasted back. The URL carries `access_type=offline`, so this
+   one sign-in yields the refresh token that every later push uses; it is not
+   repeated for that account.
 4. Create the Apps Script project: `npx clasp create-script --type standalone`,
    keeping `"rootDir": "dist"` in the resulting `.clasp.json`.
 5. Bundle, generate the setup config, and push:
    `npm run bundle && HUB_CALENDAR_ID=... SYNC_DAYS=... MEETING_OK_TAG=... MEETING_OK_TITLE=... npm run generate:client-setup-config && npx clasp push --force`.
 6. Run `setup` once from the Apps Script editor and grant the calendar scope on
    the consent screen.
+7. Grant the account write access to the hub calendar.
+8. Register `CLASP_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` as repository secrets and add
+   the key to `CLIENT_KEYS`, so later updates reach this account automatically.
 
 ## Updating every client project
 
