@@ -18,10 +18,10 @@ jobs:
       - name: Resolve client keys
         id: resolve
         env:
-          CLIENT_KEYS: ${{ secrets.CLIENT_KEYS }}
+          CLIENT_KEYS: ${{ vars.CLIENT_KEYS }}
         run: |
           if [ -z "$CLIENT_KEYS" ]; then
-            echo "CLIENT_KEYS secret is not set." >&2
+            echo "CLIENT_KEYS repository variable is not set." >&2
             exit 1
           fi
           KEYS=$(printf '%s' "$CLIENT_KEYS" | tr -d ' ' | jq -R -c 'split(",")')
