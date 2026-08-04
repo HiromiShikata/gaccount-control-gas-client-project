@@ -59,11 +59,17 @@ const tokenExchange = async (code) => {
       `Authorization code exchange failed with status ${response.status}`,
     );
   }
-  return clientAuthCreate({
-    clientId: process.env.OAUTH_CLIENT_ID,
-    clientSecret: process.env.OAUTH_CLIENT_SECRET,
-    tokenResponseBody: response.body,
-  });
+  try {
+    return clientAuthCreate({
+      clientId: process.env.OAUTH_CLIENT_ID,
+      clientSecret: process.env.OAUTH_CLIENT_SECRET,
+      tokenResponseBody: response.body,
+    });
+  } catch (error) {
+    throw new Error(
+      `${error.message}, in a response with status ${response.status}`,
+    );
+  }
 };
 
 const run = async () => {

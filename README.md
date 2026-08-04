@@ -90,7 +90,9 @@ deployment.
    and the authorization code is read out of the address bar. Exchange it with
    `npm run authorize:client exchange <code>`, which prints the JSON object to
    store as `CLIENT_AUTH_{KEY}`. The scopes are fixed in the source, so the
-   `cloud-platform` scope cannot be requested by mistake.
+   `cloud-platform` scope cannot be requested by mistake. The printed object
+   contains a refresh token, so it goes straight into the repository secret and
+   MUST NOT be written to a file in this repository.
 4. Create the Apps Script project for the account and note its script id.
 5. Bundle, generate the setup config, and push:
    `npm run bundle && HUB_CALENDAR_ID=... SYNC_DAYS=... MEETING_OK_TAG=... MEETING_OK_TITLE=... npm run generate:client-setup-config && CLIENT_AUTH='{"client_id":"...","client_secret":"...","refresh_token":"..."}' SCRIPT_ID=... npm run push:client`.
