@@ -7,6 +7,7 @@
     "build": "tsgo --noEmit",
     "bundle": "node esbuild.config.js",
     "generate:client-setup-config": "node scripts/generate-client-setup-config.js",
+    "push:client": "node scripts/push-to-apps-script.js",
     "test": "jest",
     "format": "prettier --write \"**/*.+(ts|js|json)\"",
     "format:check": "prettier --check \"**/*.+(ts|js|json)\""

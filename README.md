@@ -64,27 +64,34 @@ them, so running it again on a project that is already set up leaves exactly one
 Each client account needs its own credentials. One credential cannot serve
 several accounts, and no service account is involved, so a client whose
 organisation does not allow service accounts is still supported. The account is
-identified by the `CLASP_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` secret pair that the
+identified by the `CLIENT_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` secret pair that the
 matrix key selects, never by inference.
+
+The authorization the account grants MUST NOT include the `cloud-platform`
+scope. A Google Workspace whose administrator has set a Google Cloud session
+length rejects the unattended token refresh of any token carrying that scope,
+answering `invalid_grant` with `error_subtype: rapt_required`, which only a human
+re-authentication can clear. Requesting `script.projects`, `script.deployments`
+and `drive.file` alone keeps the refresh unattended and is sufficient for the
+Apps Script content API this project pushes with. `clasp login` always requests
+`cloud-platform`, so its credentials MUST NOT be used for the deployment.
 
 1. Install dependencies: `npm install`.
 2. Signed in as the client account, enable the Apps Script API at
    https://script.google.com/home/usersettings .
-3. Authorize clasp for the account: `npx clasp login --no-localhost`. This prints
-   an authorization URL to open on another device, so the sign-in — including the
-   password and the second factor — can be completed on a phone, and the
-   redirected URL is pasted back. The URL carries `access_type=offline`, so this
-   one sign-in yields the refresh token that every later push uses; it is not
-   repeated for that account.
-4. Create the Apps Script project: `npx clasp create-script --type standalone`,
-   keeping `"rootDir": "dist"` in the resulting `.clasp.json`.
+3. Authorize the account with `access_type=offline`, `prompt=consent` and only
+   the three scopes above, then exchange the authorization code for a refresh
+   token. The authorization URL can be opened on another device, so the sign-in —
+   including the password and the second factor — can be completed on a phone.
+4. Create the Apps Script project for the account and note its script id.
 5. Bundle, generate the setup config, and push:
-   `npm run bundle && HUB_CALENDAR_ID=... SYNC_DAYS=... MEETING_OK_TAG=... MEETING_OK_TITLE=... npm run generate:client-setup-config && npx clasp push --force`.
+   `npm run bundle && HUB_CALENDAR_ID=... SYNC_DAYS=... MEETING_OK_TAG=... MEETING_OK_TITLE=... npm run generate:client-setup-config && CLIENT_AUTH='{"client_id":"...","client_secret":"...","refresh_token":"..."}' SCRIPT_ID=... npm run push:client`.
 6. Run `setup` once from the Apps Script editor and grant the calendar scope on
    the consent screen.
 7. Grant the account write access to the hub calendar.
-8. Register `CLASP_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` as repository secrets and add
-   the key to `CLIENT_KEYS`, so later updates reach this account automatically.
+8. Register `CLIENT_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` as repository secrets and
+   add the key to `CLIENT_KEYS`, so later updates reach this account
+   automatically.
 
 ## Updating every client project
 
@@ -97,8 +104,9 @@ are never committed; the repository refers to each account only by an opaque
 key such as `C1`.
 
 - `CLIENT_KEYS` — comma-separated opaque keys, for example `C1,C2,C3`.
-- `CLASP_AUTH_{KEY}` — the `.clasprc.json` contents produced by `clasp login`
-  for that account.
+- `CLIENT_AUTH_{KEY}` — a JSON object holding `client_id`, `client_secret` and
+  `refresh_token` for that account, authorized without the `cloud-platform`
+  scope.
 - `SCRIPT_ID_{KEY}` — the Apps Script project id for that account.
 - `SETUP_HUB_CALENDAR_ID`, `SETUP_SYNC_DAYS`, `SETUP_MEETING_OK_TAG`,
   `SETUP_MEETING_OK_TITLE` — the values written into `CLIENT_SETUP_CONFIG`.
@@ -107,6 +115,7 @@ key such as `C1`.
 
 - `npm run build` — type check and build with `tsgo`.
 - `npm run bundle` — bundle `src/Code.ts` into `dist/Code.js` for Apps Script.
+- `npm run push:client` — push `dist` to one Apps Script project via the REST API.
 - `npm run generate:client-setup-config` — write `dist/ClientSetupConfig.js`
   from the four environment variables listed above.
 - `npm test` — run the unit tests. The non-interactive form is
