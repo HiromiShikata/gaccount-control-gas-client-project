@@ -13,6 +13,7 @@ export class ClientProjectSetupUseCase {
   execute(configuration: SyncConfiguration): void {
     this.configWritePort.setAll(configuration.toScriptProperties());
     this.calendarSubscriptionPort.subscribe(configuration.hubCalendarId);
+    this.triggerPort.deleteSyncTriggers();
     this.triggerPort.createSyncTrigger();
   }
 }

@@ -22,9 +22,17 @@ class RecordingCalendarSubscriptionPort implements CalendarSubscriptionPort {
 
 class RecordingTriggerPort implements TriggerPort {
   createdCount = 0;
+  deletedCount = 0;
+  operations: string[] = [];
 
   createSyncTrigger(): void {
     this.createdCount += 1;
+    this.operations.push('create');
+  }
+
+  deleteSyncTriggers(): void {
+    this.deletedCount += 1;
+    this.operations.push('delete');
   }
 }
 
@@ -85,6 +93,16 @@ describe('ClientProjectSetupUseCase', () => {
     expect(triggerPort.createdCount).toBe(1);
   });
 
+  it('removes the existing sync triggers before installing the new one', () => {
+    const { useCase, triggerPort } = buildUseCase();
+
+    useCase.execute(
+      new SyncConfiguration('hub@example.com', 60, 'tag', 'title'),
+    );
+
+    expect(triggerPort.operations).toEqual(['delete', 'create']);
+  });
+
   it('does not subscribe or install a trigger when the configuration is rejected', () => {
     const { useCase, calendarSubscriptionPort, triggerPort } = buildUseCase();
 
@@ -94,6 +112,6 @@ describe('ClientProjectSetupUseCase', () => {
       ),
     ).toThrow('SYNC_DAYS must be a positive integer, received "0"');
     expect(calendarSubscriptionPort.subscribed).toEqual([]);
-    expect(triggerPort.createdCount).toBe(0);
+    expect(triggerPort.operations).toEqual([]);
   });
 });

@@ -57,6 +57,10 @@ Script Properties, subscribes the account to the hub calendar, and installs the
 which `npm run generate:client-setup-config` writes into `dist` from environment
 variables, so no account-specific value is committed to this repository.
 
+`setup` replaces the `sync` triggers the project already has instead of adding to
+them, so running it again on a project that is already set up leaves exactly one
+15-minute trigger rather than doubling the sync frequency.
+
 1. Install dependencies: `npm install`.
 2. Enable the Apps Script API for the account at
    https://script.google.com/home/usersettings .
