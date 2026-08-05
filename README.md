@@ -100,8 +100,8 @@ deployment.
    the consent screen.
 7. Grant the account write access to the hub calendar.
 8. Register `CLIENT_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` as repository secrets and
-   add the key to `CLIENT_KEYS`, so later updates reach this account
-   automatically.
+   add the key to the `CLIENT_KEYS` repository variable, so later updates reach
+   this account automatically.
 
 ## Updating every client project
 
@@ -114,11 +114,17 @@ file that exists only inside a client project is removed by the next run. This
 is what makes every registered account converge on the same script, and it means
 a project MUST NOT be edited by hand once it is registered.
 
-The workflow reads these repository secrets. Account addresses and script ids
-are never committed; the repository refers to each account only by an opaque
-key such as `C1`.
+The workflow reads one repository variable and the repository secrets below.
+Account addresses and script ids are never committed; the repository refers to
+each account only by an opaque key such as `C1`.
 
-- `CLIENT_KEYS` — comma-separated opaque keys, for example `C1,C2,C3`.
+`CLIENT_KEYS` is a repository variable, not a secret, because GitHub Actions
+drops a job output whose value contains a secret value. The deployment matrix is
+built from that output, so storing the key list as a secret leaves the matrix
+empty and no client is updated. The keys carry no identifying information, which
+is why they are safe to hold as a variable.
+
+- `CLIENT_KEYS` (variable) — comma-separated opaque keys, for example `C1,C2,C3`.
 - `CLIENT_AUTH_{KEY}` — a JSON object holding `client_id`, `client_secret` and
   `refresh_token` for that account, authorized without the `cloud-platform`
   scope.
