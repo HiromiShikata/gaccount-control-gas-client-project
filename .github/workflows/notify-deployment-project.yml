@@ -1,0 +1,23 @@
+name: Notify the deployment project
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify-deployment-project:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask HiromiShikata/gaccount-control-gas-client-project-deployment to distribute this commit
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          gh api -X POST \
+            repos/HiromiShikata/gaccount-control-gas-client-project-deployment/dispatches \
+            -f event_type=source-updated

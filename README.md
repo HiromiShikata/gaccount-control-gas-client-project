@@ -63,9 +63,11 @@ them, so running it again on a project that is already set up leaves exactly one
 
 Each client account needs its own credentials. One credential cannot serve
 several accounts, and no service account is involved, so a client whose
-organisation does not allow service accounts is still supported. The account is
-identified by the `CLIENT_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` secret pair that the
-matrix key selects, never by inference.
+organisation does not allow service accounts is still supported. The credentials
+and the client registry are held by the deployment project below, never by this
+repository, which is public.
+
+https://github.com/HiromiShikata/gaccount-control-gas-client-project-deployment
 
 The authorization the account grants MUST NOT include the `cloud-platform`
 scope. A Google Workspace whose administrator has set a Google Cloud session
@@ -89,7 +91,8 @@ deployment.
    completed on a phone; the redirect to the loopback address then fails to load
    and the authorization code is read out of the address bar. Exchange it with
    `npm run authorize:client exchange <code>`, which prints the JSON object to
-   store as `CLIENT_AUTH_{KEY}`. The scopes are fixed in the source, so the
+   store as the deployment project's `CLIENT_{KEY}` secret. The scopes are fixed
+   in the source, so the
    `cloud-platform` scope cannot be requested by mistake. The printed object
    contains a refresh token, so it goes straight into the repository secret and
    MUST NOT be written to a file in this repository.
@@ -99,38 +102,28 @@ deployment.
 6. Run `setup` once from the Apps Script editor and grant the calendar scope on
    the consent screen.
 7. Grant the account write access to the hub calendar.
-8. Register `CLIENT_AUTH_{KEY}` and `SCRIPT_ID_{KEY}` as repository secrets and
-   add the key to the `CLIENT_KEYS` repository variable, so later updates reach
-   this account automatically.
+8. Add the account to the deployment project: one entry in its `clients.json`
+   and one secret named after the same key, so later updates reach this account
+   automatically.
 
 ## Updating every client project
 
-`.github/workflows/deploy-clients.yml` pushes the current bundle to every
-registered project when `main` changes, and on manual dispatch. Each project is
-a separate matrix job, so one failing account does not stop the others.
+`.github/workflows/notify-deployment-project.yml` asks the deployment project to
+distribute, on every push to `main` and on manual dispatch. It sends a
+`repository_dispatch` and nothing else, so this repository holds no client
+credential, no client script id, and no list of clients.
+
+https://github.com/HiromiShikata/gaccount-control-gas-client-project-deployment
+
+The deployment project checks this repository out at `main`, builds it, and
+pushes the bundle to each client Apps Script project listed in its
+`clients.json`. Each client is a separate matrix job, so one failing account
+does not stop the others.
 
 The push replaces the target project's entire file set with the bundle, so a
 file that exists only inside a client project is removed by the next run. This
 is what makes every registered account converge on the same script, and it means
 a project MUST NOT be edited by hand once it is registered.
-
-The workflow reads one repository variable and the repository secrets below.
-Account addresses and script ids are never committed; the repository refers to
-each account only by an opaque key such as `C1`.
-
-`CLIENT_KEYS` is a repository variable, not a secret, because GitHub Actions
-drops a job output whose value contains a secret value. The deployment matrix is
-built from that output, so storing the key list as a secret leaves the matrix
-empty and no client is updated. The keys carry no identifying information, which
-is why they are safe to hold as a variable.
-
-- `CLIENT_KEYS` (variable) — comma-separated opaque keys, for example `C1,C2,C3`.
-- `CLIENT_AUTH_{KEY}` — a JSON object holding `client_id`, `client_secret` and
-  `refresh_token` for that account, authorized without the `cloud-platform`
-  scope.
-- `SCRIPT_ID_{KEY}` — the Apps Script project id for that account.
-- `SETUP_HUB_CALENDAR_ID`, `SETUP_SYNC_DAYS`, `SETUP_MEETING_OK_TAG`,
-  `SETUP_MEETING_OK_TITLE` — the values written into `CLIENT_SETUP_CONFIG`.
 
 ## Development
 
@@ -139,7 +132,7 @@ is why they are safe to hold as a variable.
 - `npm run push:client` — push `dist` to one Apps Script project via the REST API.
 - `npm run authorize:client url` — print the consent URL for one account.
 - `npm run authorize:client exchange <code>` — exchange the authorization code
-  and print that account's `CLIENT_AUTH_{KEY}` value.
+  and print that account's `CLIENT_{KEY}` secret value.
 - `npm run generate:client-setup-config` — write `dist/ClientSetupConfig.js`
   from the four environment variables listed above.
 - `npm test` — run the unit tests. The non-interactive form is
