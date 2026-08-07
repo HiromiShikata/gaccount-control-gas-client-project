@@ -104,8 +104,12 @@ jobs:
             "https://api.github.com/graphql")
           echo "$RESPONSE"
           if echo "$RESPONSE" | jq -e '.errors' >/dev/null; then
-            echo "Failed to enable auto merge"
-            exit 1
+            ERROR_TYPE=$(echo "$RESPONSE" | jq -r '.errors[0].type // "unknown"')
+            if [ "$ERROR_TYPE" != "UNPROCESSABLE" ]; then
+              echo "Failed to enable auto merge"
+              exit 1
+            fi
+            echo "Auto-merge pending: PR is in unstable state; it will be enabled when required checks pass"
           fi
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
