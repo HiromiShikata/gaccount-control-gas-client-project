@@ -173,5 +173,40 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
       expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
       expect(logPort.error.mock.calls.length).toBe(1);
     });
+
+    it('enumerates each calendar exactly once per run', () => {
+      const sharedStart = new Date('2020-01-04T09:00:00Z');
+      const sharedEnd = new Date('2020-01-04T10:00:00Z');
+      const { useCase, calendarPort } = createMocks({
+        own: [
+          new CalendarEvent(
+            'own-event',
+            'Own meeting',
+            sharedStart,
+            sharedEnd,
+            false,
+            false,
+          ),
+        ],
+        hub: [
+          new CalendarEvent(
+            'hub-event',
+            'Hub meeting',
+            sharedStart,
+            sharedEnd,
+            false,
+            false,
+          ),
+        ],
+      });
+
+      useCase.execute(NOW, OWN_DOMAIN);
+
+      const enumeratedCalendarTypes =
+        calendarPort.listTimedEvents.mock.calls.map(
+          ([calendar]: [CalendarRef, Date, Date]) => calendar.type,
+        );
+      expect(enumeratedCalendarTypes.sort()).toEqual(['hub', 'own']);
+    });
   });
 });
