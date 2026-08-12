@@ -20,7 +20,7 @@
     "@types/google-apps-script": "2.0.11",
     "@types/jest": "30.0.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
-    "esbuild": "0.28.0",
+    "esbuild": "0.28.1",
     "esbuild-gas-plugin": "0.10.0",
     "jest": "30.4.2",
     "prettier": "3.9.6",
