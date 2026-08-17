@@ -46,21 +46,95 @@ silent fallback to a hardcoded value.
 - `MEETING_OK_TAG` — the opt-in meeting-ok tag matched in hub event titles.
 - `MEETING_OK_TITLE` — the placeholder title used for meeting-ok hub events.
 
+The values are written by `setup`, so they are not entered by hand. `sync` reads
+them at runtime and skips the run when one is absent.
+
 ## Client setup
 
+`setup` performs the three project-side operations in one call: it writes the
+Script Properties, subscribes the account to the hub calendar, and installs the
+15-minute trigger for `sync`. It reads its values from `CLIENT_SETUP_CONFIG`,
+which `npm run generate:client-setup-config` writes into `dist` from environment
+variables, so no account-specific value is committed to this repository.
+
+`setup` replaces the `sync` triggers the project already has instead of adding to
+them, so running it again on a project that is already set up leaves exactly one
+15-minute trigger rather than doubling the sync frequency.
+
+Each client account needs its own credentials. One credential cannot serve
+several accounts, and no service account is involved, so a client whose
+organisation does not allow service accounts is still supported. The credentials
+and the client registry are held by the deployment project below, never by this
+repository, which is public.
+
+https://github.com/HiromiShikata/gaccount-control-gas-client-project-deployment
+
+The authorization the account grants MUST NOT include the `cloud-platform`
+scope. A Google Workspace whose administrator has set a Google Cloud session
+length rejects the unattended token refresh of any token carrying that scope,
+answering `invalid_grant` with `error_subtype: rapt_required`, which only a human
+re-authentication can clear. Requesting `script.projects`, `script.deployments`,
+`drive.file` and `userinfo.email` alone keeps the refresh unattended and is
+sufficient for the Apps Script content API this project pushes with. Those four
+scopes are the ones `scripts/client-authorization.js` fixes in the source, so the
+authorization command cannot request a Google Cloud scope. `clasp login` always
+requests `cloud-platform`, so its credentials MUST NOT be used for the
+deployment.
+
 1. Install dependencies: `npm install`.
-2. Create the Apps Script project and link it: copy `.clasp.json.example` to
-   `.clasp.json` and set `scriptId` to your Apps Script project id (or run
-   `npx clasp create --type standalone` and keep `"rootDir": "dist"`).
-3. Bundle and push the code: `npm run bundle && npx clasp push`.
-4. In the Apps Script project settings, add the Script Properties listed above.
-5. Run `createTrigger` once from the Apps Script editor to install the
-   15-minute trigger for `sync`.
+2. Signed in as the client account, enable the Apps Script API at
+   https://script.google.com/home/usersettings .
+3. Print the consent URL with
+   `OAUTH_CLIENT_ID=... OAUTH_CLIENT_SECRET=... OAUTH_REDIRECT_PORT=... npm run authorize:client url`,
+   open it, and sign in as the client account. The URL can be opened on another
+   device, so the sign-in — including the password and the second factor — can be
+   completed on a phone; the redirect to the loopback address then fails to load
+   and the authorization code is read out of the address bar. Exchange it with
+   `npm run authorize:client exchange <code>`, which prints the JSON object to
+   store as the deployment project's `CLIENT_{KEY}` secret. The scopes are fixed
+   in the source, so the
+   `cloud-platform` scope cannot be requested by mistake. The printed object
+   contains a refresh token, so it goes straight into the repository secret and
+   MUST NOT be written to a file in this repository.
+4. Create the Apps Script project for the account and note its script id.
+5. Bundle, generate the setup config, and push:
+   `npm run bundle && HUB_CALENDAR_ID=... SYNC_DAYS=... MEETING_OK_TAG=... MEETING_OK_TITLE=... npm run generate:client-setup-config && CLIENT_AUTH='{"client_id":"...","client_secret":"...","refresh_token":"..."}' SCRIPT_ID=... npm run push:client`.
+6. Run `setup` once from the Apps Script editor and grant the calendar scope on
+   the consent screen.
+7. Grant the account write access to the hub calendar.
+8. Add the account to the deployment project: one entry in its `clients.json`
+   and one secret named after the same key, so later updates reach this account
+   automatically.
+
+## Updating every client project
+
+`.github/workflows/notify-deployment-project.yml` asks the deployment project to
+distribute, on every push to `main` and on manual dispatch. It sends a
+`repository_dispatch` and nothing else, so this repository holds no client
+credential, no client script id, and no list of clients.
+
+https://github.com/HiromiShikata/gaccount-control-gas-client-project-deployment
+
+The deployment project checks this repository out at `main`, builds it, and
+pushes the bundle to each client Apps Script project listed in its
+`clients.json`. Each client is a separate matrix job, so one failing account
+does not stop the others.
+
+The push replaces the target project's entire file set with the bundle, so a
+file that exists only inside a client project is removed by the next run. This
+is what makes every registered account converge on the same script, and it means
+a project MUST NOT be edited by hand once it is registered.
 
 ## Development
 
 - `npm run build` — type check and build with `tsgo`.
 - `npm run bundle` — bundle `src/Code.ts` into `dist/Code.js` for Apps Script.
+- `npm run push:client` — push `dist` to one Apps Script project via the REST API.
+- `npm run authorize:client url` — print the consent URL for one account.
+- `npm run authorize:client exchange <code>` — exchange the authorization code
+  and print that account's `CLIENT_{KEY}` secret value.
+- `npm run generate:client-setup-config` — write `dist/ClientSetupConfig.js`
+  from the four environment variables listed above.
 - `npm test` — run the unit tests. The non-interactive form is
   `CI=true npx jest --watchAll=false --ci`.
 - `npm run format` — format the sources with Prettier.

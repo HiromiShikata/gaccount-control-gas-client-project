@@ -1,3 +1,4 @@
+import { CalendarEvent } from '../entities/CalendarEvent';
 import { CalendarRef } from '../entities/CalendarRef';
 import { HoldPlaceholderReconciliation } from '../entities/HoldPlaceholderReconciliation';
 import { SyncConfiguration } from '../entities/SyncConfiguration';
@@ -41,24 +42,23 @@ export class CalendarHoldMirrorSyncUseCase {
     const to = new Date(
       now.getTime() + configuration.syncDays * MILLISECONDS_PER_DAY,
     );
-    this.pushToHub(own, hub, ownDomain, from, to);
-    this.pullFromHub(own, hub, ownDomain, from, to, configuration);
+    const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
+    const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
+    this.pushToHub(hub, ownEvents, hubEvents, ownDomain);
+    this.pullFromHub(own, ownEvents, hubEvents, ownDomain, configuration);
   }
 
   private pushToHub(
-    own: CalendarRef,
     hub: CalendarRef,
+    ownEvents: CalendarEvent[],
+    hubEvents: CalendarEvent[],
     ownDomain: string,
-    from: Date,
-    to: Date,
   ): void {
-    const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
     const desired =
       HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
         ownEvents,
         ownDomain,
       );
-    const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
     const existing =
       HoldPlaceholderReconciliation.selectPushExistingPlaceholders(
         hubEvents,
@@ -78,13 +78,11 @@ export class CalendarHoldMirrorSyncUseCase {
 
   private pullFromHub(
     own: CalendarRef,
-    hub: CalendarRef,
+    ownEvents: CalendarEvent[],
+    hubEvents: CalendarEvent[],
     ownDomain: string,
-    from: Date,
-    to: Date,
     configuration: SyncConfiguration,
   ): void {
-    const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
     const desired =
       HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
         hubEvents,
@@ -92,7 +90,6 @@ export class CalendarHoldMirrorSyncUseCase {
         configuration.meetingOkTag,
         configuration.meetingOkTitle,
       );
-    const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
     const existing =
       HoldPlaceholderReconciliation.selectPullExistingPlaceholders(ownEvents);
     const { toCreate, toDelete } = HoldPlaceholderReconciliation.reconcile(
@@ -108,21 +105,11 @@ export class CalendarHoldMirrorSyncUseCase {
   }
 
   private loadConfiguration(): SyncConfiguration {
-    const hubCalendarId = this.configPort.getRequired('HUB_CALENDAR_ID');
-    const syncDaysRaw = this.configPort.getRequired('SYNC_DAYS');
-    const meetingOkTag = this.configPort.getRequired('MEETING_OK_TAG');
-    const meetingOkTitle = this.configPort.getRequired('MEETING_OK_TITLE');
-    const syncDays = Number.parseInt(syncDaysRaw, 10);
-    if (!Number.isInteger(syncDays) || syncDays <= 0) {
-      throw new Error(
-        `SYNC_DAYS must be a positive integer, received "${syncDaysRaw}"`,
-      );
-    }
-    return new SyncConfiguration(
-      hubCalendarId,
-      syncDays,
-      meetingOkTag,
-      meetingOkTitle,
+    return SyncConfiguration.create(
+      this.configPort.getRequired('HUB_CALENDAR_ID'),
+      this.configPort.getRequired('SYNC_DAYS'),
+      this.configPort.getRequired('MEETING_OK_TAG'),
+      this.configPort.getRequired('MEETING_OK_TITLE'),
     );
   }
 
