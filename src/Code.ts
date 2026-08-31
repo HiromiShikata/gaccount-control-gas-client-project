@@ -7,6 +7,7 @@ import { ScriptPropertiesConfigWritePort } from './adapters/ScriptPropertiesConf
 import { SyncConfiguration } from './domain/entities/SyncConfiguration';
 import { CalendarHoldMirrorSyncUseCase } from './domain/usecases/CalendarHoldMirrorSyncUseCase';
 import { ClientProjectSetupUseCase } from './domain/usecases/ClientProjectSetupUseCase';
+import { MeetingBufferSyncUseCase } from './domain/usecases/MeetingBufferSyncUseCase';
 
 declare const CLIENT_SETUP_CONFIG: {
   hubCalendarId: string;
@@ -16,13 +17,18 @@ declare const CLIENT_SETUP_CONFIG: {
 };
 
 function sync(): void {
-  const useCase = new CalendarHoldMirrorSyncUseCase(
-    new CalendarAppCalendarPort(),
-    new ScriptPropertiesConfigPort(PropertiesService.getScriptProperties()),
-    new GasLogPort(),
+  const now = new Date();
+  const calendarPort = new CalendarAppCalendarPort();
+  const configPort = new ScriptPropertiesConfigPort(
+    PropertiesService.getScriptProperties(),
   );
+  const logPort = new GasLogPort();
   const ownDomain = Session.getActiveUser().getEmail().split('@')[1];
-  useCase.execute(new Date(), ownDomain);
+  new CalendarHoldMirrorSyncUseCase(calendarPort, configPort, logPort).execute(
+    now,
+    ownDomain,
+  );
+  new MeetingBufferSyncUseCase(calendarPort, configPort, logPort).execute(now);
 }
 
 function createTrigger(): void {
