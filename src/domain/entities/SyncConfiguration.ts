@@ -6,6 +6,16 @@ export class SyncConfiguration {
     readonly meetingOkTitle: string,
   ) {}
 
+  static parseSyncDays(syncDaysRaw: string): number {
+    const syncDays = Number.parseInt(syncDaysRaw, 10);
+    if (!Number.isInteger(syncDays) || syncDays <= 0) {
+      throw new Error(
+        `SYNC_DAYS must be a positive integer, received "${syncDaysRaw}"`,
+      );
+    }
+    return syncDays;
+  }
+
   static create(
     hubCalendarId: string,
     syncDaysRaw: string,
@@ -15,15 +25,9 @@ export class SyncConfiguration {
     SyncConfiguration.requireNonEmpty('HUB_CALENDAR_ID', hubCalendarId);
     SyncConfiguration.requireNonEmpty('MEETING_OK_TAG', meetingOkTag);
     SyncConfiguration.requireNonEmpty('MEETING_OK_TITLE', meetingOkTitle);
-    const syncDays = Number.parseInt(syncDaysRaw, 10);
-    if (!Number.isInteger(syncDays) || syncDays <= 0) {
-      throw new Error(
-        `SYNC_DAYS must be a positive integer, received "${syncDaysRaw}"`,
-      );
-    }
     return new SyncConfiguration(
       hubCalendarId,
-      syncDays,
+      SyncConfiguration.parseSyncDays(syncDaysRaw),
       meetingOkTag,
       meetingOkTitle,
     );

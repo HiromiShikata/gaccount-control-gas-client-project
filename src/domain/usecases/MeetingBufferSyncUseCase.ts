@@ -1,6 +1,7 @@
 import { CalendarRef } from '../entities/CalendarRef';
 import { HoldPlaceholderReconciliation } from '../entities/HoldPlaceholderReconciliation';
 import { MeetingBufferReconciliation } from '../entities/MeetingBufferReconciliation';
+import { SyncConfiguration } from '../entities/SyncConfiguration';
 import { CalendarPort } from './adapter-interfaces/CalendarPort';
 import { ConfigPort } from './adapter-interfaces/ConfigPort';
 import { LogPort } from './adapter-interfaces/LogPort';
@@ -48,14 +49,9 @@ export class MeetingBufferSyncUseCase {
   }
 
   private loadSyncDays(): number {
-    const syncDaysRaw = this.configPort.getRequired('SYNC_DAYS');
-    const syncDays = Number.parseInt(syncDaysRaw, 10);
-    if (!Number.isInteger(syncDays) || syncDays <= 0) {
-      throw new Error(
-        `SYNC_DAYS must be a positive integer, received "${syncDaysRaw}"`,
-      );
-    }
-    return syncDays;
+    return SyncConfiguration.parseSyncDays(
+      this.configPort.getRequired('SYNC_DAYS'),
+    );
   }
 
   private describe(error: unknown): string {

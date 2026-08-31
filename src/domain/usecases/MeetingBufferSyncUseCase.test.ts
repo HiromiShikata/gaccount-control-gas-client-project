@@ -159,6 +159,17 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(logPort.error.mock.calls.length).toBe(1);
     });
 
+    it('logs and skips calendar mutations when SYNC_DAYS is zero', () => {
+      const { useCase, calendarPort, logPort } = createMocks([], {
+        SYNC_DAYS: '0',
+      });
+
+      useCase.execute(NOW);
+
+      expect(calendarPort.listTimedEvents.mock.calls).toEqual([]);
+      expect(logPort.error.mock.calls.length).toBe(1);
+    });
+
     it('logs and skips calendar mutations when SYNC_DAYS is missing', () => {
       const { useCase, calendarPort, logPort } = createMocks([], {});
 
