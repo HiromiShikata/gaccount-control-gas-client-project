@@ -214,6 +214,42 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(logPort.error.mock.calls.length).toBe(1);
     });
 
+    it('deletes legacy prep and summary buffer events found on the own calendar', () => {
+      const legacyPrepStart = new Date('2020-01-02T08:55:00Z');
+      const legacyPrepEnd = new Date('2020-01-02T09:00:00Z');
+      const legacySummaryStart = new Date('2020-01-02T09:30:00Z');
+      const legacySummaryEnd = new Date('2020-01-02T09:35:00Z');
+      const { useCase, calendarPort, own } = createMocks({
+        own: [
+          new CalendarEvent(
+            'legacy-prep',
+            `${PREP_TAG} Standup`,
+            legacyPrepStart,
+            legacyPrepEnd,
+            false,
+            false,
+          ),
+          new CalendarEvent(
+            'legacy-summary',
+            `${SUMMARY_TAG} Standup`,
+            legacySummaryStart,
+            legacySummaryEnd,
+            false,
+            false,
+          ),
+        ],
+        hub: [],
+      });
+
+      useCase.execute(NOW);
+
+      expect(calendarPort.deleteEvent.mock.calls).toEqual([
+        [own, 'legacy-prep'],
+        [own, 'legacy-summary'],
+      ]);
+      expect(calendarPort.createHoldPlaceholder.mock.calls).toEqual([]);
+    });
+
     it('reads each calendar exactly once per run', () => {
       const { useCase, calendarPort } = createMocks({ own: [], hub: [] });
 

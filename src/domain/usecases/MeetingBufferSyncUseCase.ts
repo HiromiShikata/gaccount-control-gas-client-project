@@ -38,6 +38,12 @@ export class MeetingBufferSyncUseCase {
     const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
     const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
 
+    for (const event of MeetingBufferReconciliation.selectExistingBuffers(
+      ownEvents,
+    )) {
+      this.calendarPort.deleteEvent(own, event.id);
+    }
+
     const desired =
       MeetingBufferReconciliation.computeDesiredBuffers(ownEvents);
     const existing =
