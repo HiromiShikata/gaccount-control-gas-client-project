@@ -1,12 +1,15 @@
 import { CalendarEvent } from './CalendarEvent';
+import {
+  HOLD_TAG,
+  PREP_TAG,
+  SUMMARY_TAG,
+} from './CalendarEventTags';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
-import { HOLD_TAG } from './HoldPlaceholderReconciliation';
 
-export const PREP_TAG = '[PREP]';
-export const SUMMARY_TAG = '[SUMMARY]';
+export { PREP_TAG, SUMMARY_TAG };
 
-const BUFFER_MINUTES = 5;
+const BUFFER_MINUTES = 15;
 const BUFFER_MS = BUFFER_MINUTES * 60 * 1000;
 
 export class MeetingBufferReconciliation {
@@ -32,9 +35,9 @@ export class MeetingBufferReconciliation {
   }
 
   static selectExistingBuffers(
-    ownEvents: CalendarEvent[],
+    events: CalendarEvent[],
   ): ExistingHoldPlaceholder[] {
-    return ownEvents
+    return events
       .filter(
         (event) =>
           event.title.startsWith(PREP_TAG) ||

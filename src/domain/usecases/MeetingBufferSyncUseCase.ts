@@ -16,9 +16,13 @@ export class MeetingBufferSyncUseCase {
   ) {}
 
   execute(now: Date): void {
+    let hubCalendarId: string;
     let syncDays: number;
     try {
-      syncDays = this.loadSyncDays();
+      hubCalendarId = this.configPort.getRequired('HUB_CALENDAR_ID');
+      syncDays = SyncConfiguration.parseSyncDays(
+        this.configPort.getRequired('SYNC_DAYS'),
+      );
     } catch (error) {
       this.logPort.error(
         `Meeting buffer configuration is invalid, skipping run: ${this.describe(error)}`,
@@ -27,31 +31,28 @@ export class MeetingBufferSyncUseCase {
     }
 
     const own: CalendarRef = { type: 'own' };
+    const hub: CalendarRef = { type: 'hub', hubCalendarId };
     const from = now;
     const to = new Date(now.getTime() + syncDays * MILLISECONDS_PER_DAY);
+
     const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
+    const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
 
     const desired =
       MeetingBufferReconciliation.computeDesiredBuffers(ownEvents);
     const existing =
-      MeetingBufferReconciliation.selectExistingBuffers(ownEvents);
+      MeetingBufferReconciliation.selectExistingBuffers(hubEvents);
     const { toCreate, toDelete } = HoldPlaceholderReconciliation.reconcile(
       desired,
       existing,
     );
 
     for (const event of toDelete) {
-      this.calendarPort.deleteEvent(own, event.id);
+      this.calendarPort.deleteEvent(hub, event.id);
     }
     for (const buffer of toCreate) {
-      this.calendarPort.createHoldPlaceholder(own, buffer);
+      this.calendarPort.createHoldPlaceholder(hub, buffer);
     }
-  }
-
-  private loadSyncDays(): number {
-    return SyncConfiguration.parseSyncDays(
-      this.configPort.getRequired('SYNC_DAYS'),
-    );
   }
 
   private describe(error: unknown): string {
