@@ -1,4 +1,5 @@
 import { CalendarEvent } from './CalendarEvent';
+import { PREP_TAG, SUMMARY_TAG } from './CalendarEventTags';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 import {
@@ -145,6 +146,28 @@ describe('HoldPlaceholderReconciliation', () => {
       const desired =
         HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
           [timedEvent('a', 'External Sync', START, END, { isDeclined: true })],
+          OWN_DOMAIN,
+          MEETING_OK_TAG,
+          MEETING_OK_TITLE,
+        );
+      expect(desired).toEqual([]);
+    });
+
+    it('skips hub prep buffer events to prevent mirroring them to the own calendar', () => {
+      const desired =
+        HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
+          [timedEvent('a', `${PREP_TAG} Standup`, START, END)],
+          OWN_DOMAIN,
+          MEETING_OK_TAG,
+          MEETING_OK_TITLE,
+        );
+      expect(desired).toEqual([]);
+    });
+
+    it('skips hub summary buffer events to prevent mirroring them to the own calendar', () => {
+      const desired =
+        HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
+          [timedEvent('a', `${SUMMARY_TAG} Standup`, START, END)],
           OWN_DOMAIN,
           MEETING_OK_TAG,
           MEETING_OK_TITLE,

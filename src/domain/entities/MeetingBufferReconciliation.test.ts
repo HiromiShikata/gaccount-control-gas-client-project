@@ -8,7 +8,7 @@ import {
   SUMMARY_TAG,
 } from './MeetingBufferReconciliation';
 
-const BUFFER_MS = 5 * 60 * 1000;
+const BUFFER_MS = 15 * 60 * 1000;
 
 const timedEvent = (
   id: string,

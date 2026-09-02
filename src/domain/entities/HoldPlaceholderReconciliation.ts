@@ -1,8 +1,9 @@
 import { CalendarEvent } from './CalendarEvent';
+import { HOLD_TAG, PREP_TAG, SUMMARY_TAG } from './CalendarEventTags';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 
-export const HOLD_TAG = '[HOLD]';
+export { HOLD_TAG };
 
 export class HoldPlaceholderReconciliation {
   static computePushDesiredPlaceholders(
@@ -35,6 +36,8 @@ export class HoldPlaceholderReconciliation {
       .filter((event) => !event.isAllDay)
       .filter((event) => !event.title.startsWith(ownHoldPrefix))
       .filter((event) => !event.isDeclined)
+      .filter((event) => !event.title.startsWith(PREP_TAG))
+      .filter((event) => !event.title.startsWith(SUMMARY_TAG))
       .map(
         (event) =>
           new HoldPlaceholder(
