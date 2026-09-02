@@ -84,6 +84,13 @@ describe('MeetingBufferReconciliation', () => {
       expect(buffers).toEqual([]);
     });
 
+    it('skips events titled Meeting buffer', () => {
+      const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
+        timedEvent('a', 'Meeting buffer', START, END),
+      ]);
+      expect(buffers).toEqual([]);
+    });
+
     it('creates buffers for multiple qualifying events', () => {
       const start2 = new Date('2020-01-01T14:00:00Z');
       const end2 = new Date('2020-01-01T15:00:00Z');
