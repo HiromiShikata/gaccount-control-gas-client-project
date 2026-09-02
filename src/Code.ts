@@ -4,6 +4,7 @@ import { GasLogPort } from './adapters/GasLogPort';
 import { ScriptAppTriggerPort } from './adapters/ScriptAppTriggerPort';
 import { ScriptPropertiesConfigPort } from './adapters/ScriptPropertiesConfigPort';
 import { ScriptPropertiesConfigWritePort } from './adapters/ScriptPropertiesConfigWritePort';
+import { ScriptPropertiesMeetingBufferStatePort } from './adapters/ScriptPropertiesMeetingBufferStatePort';
 import { SyncConfiguration } from './domain/entities/SyncConfiguration';
 import { CalendarHoldMirrorSyncUseCase } from './domain/usecases/CalendarHoldMirrorSyncUseCase';
 import { ClientProjectSetupUseCase } from './domain/usecases/ClientProjectSetupUseCase';
@@ -28,7 +29,14 @@ function sync(): void {
     now,
     ownDomain,
   );
-  new MeetingBufferSyncUseCase(calendarPort, configPort, logPort).execute(now);
+  new MeetingBufferSyncUseCase(
+    calendarPort,
+    configPort,
+    logPort,
+    new ScriptPropertiesMeetingBufferStatePort(
+      PropertiesService.getScriptProperties(),
+    ),
+  ).execute(now);
 }
 
 function createTrigger(): void {
