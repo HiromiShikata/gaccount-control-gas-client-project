@@ -24,9 +24,7 @@ const createMocks = (
     exists: jest.fn((): boolean => true),
     listTimedEvents: jest.fn(
       (calendar: CalendarRef, _from: Date, _to: Date): CalendarEvent[] =>
-        calendar.type === 'hub'
-          ? eventsByCalendar.hub
-          : eventsByCalendar.own,
+        calendar.type === 'hub' ? eventsByCalendar.hub : eventsByCalendar.own,
     ),
     createHoldPlaceholder: jest.fn(
       (_calendar: CalendarRef, _placeholder: HoldPlaceholder): void => {},

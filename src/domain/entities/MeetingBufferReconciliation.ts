@@ -1,9 +1,5 @@
 import { CalendarEvent } from './CalendarEvent';
-import {
-  HOLD_TAG,
-  PREP_TAG,
-  SUMMARY_TAG,
-} from './CalendarEventTags';
+import { HOLD_TAG, PREP_TAG, SUMMARY_TAG } from './CalendarEventTags';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 
