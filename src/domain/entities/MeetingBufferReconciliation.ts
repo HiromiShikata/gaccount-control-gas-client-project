@@ -3,6 +3,8 @@ import { HOLD_TAG, PREP_TAG, SUMMARY_TAG } from './CalendarEventTags';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 
+export const MEETING_BUFFER_TITLE = 'Meeting buffer';
+
 export { PREP_TAG, SUMMARY_TAG };
 
 const BUFFER_MINUTES = 15;
@@ -16,6 +18,7 @@ export class MeetingBufferReconciliation {
       .filter((event) => !event.title.startsWith(HOLD_TAG))
       .filter((event) => !event.title.startsWith(PREP_TAG))
       .filter((event) => !event.title.startsWith(SUMMARY_TAG))
+      .filter((event) => event.title !== MEETING_BUFFER_TITLE)
       .flatMap((event) => [
         new HoldPlaceholder(
           `${PREP_TAG} ${event.title}`,

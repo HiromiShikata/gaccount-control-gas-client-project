@@ -3,6 +3,7 @@ import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 import { HOLD_TAG } from './HoldPlaceholderReconciliation';
 import {
+  MEETING_BUFFER_TITLE,
   MeetingBufferReconciliation,
   PREP_TAG,
   SUMMARY_TAG,
@@ -80,6 +81,13 @@ describe('MeetingBufferReconciliation', () => {
     it('skips existing summary buffer events to prevent buffer-of-buffer', () => {
       const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
         timedEvent('a', `${SUMMARY_TAG} Standup`, START, END),
+      ]);
+      expect(buffers).toEqual([]);
+    });
+
+    it('skips events titled Meeting buffer', () => {
+      const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
+        timedEvent('a', MEETING_BUFFER_TITLE, START, END),
       ]);
       expect(buffers).toEqual([]);
     });
