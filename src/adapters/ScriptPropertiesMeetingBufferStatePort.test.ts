@@ -48,4 +48,23 @@ describe('ScriptPropertiesMeetingBufferStatePort', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('setProcessedEventSnapshots', () => {
+    it('serializes the map to JSON and stores it via setProperty', () => {
+      const properties = makeProperties(null);
+      const port = new ScriptPropertiesMeetingBufferStatePort(properties);
+      const snapshots = new Map([
+        ['event-1', { startMs: 1000, endMs: 2000, title: 'Standup' }],
+      ]);
+
+      port.setProcessedEventSnapshots(snapshots);
+
+      expect(properties.setProperty).toHaveBeenCalledWith(
+        'MEETING_BUFFER_PROCESSED_EVENT_SNAPSHOTS',
+        JSON.stringify({
+          'event-1': { startMs: 1000, endMs: 2000, title: 'Standup' },
+        }),
+      );
+    });
+  });
 });
