@@ -1,10 +1,7 @@
 import { CalendarEvent } from './CalendarEvent';
-import {
-  HOLD_TAG,
-  MEETING_BUFFER_TITLE,
-  PREP_TAG,
-  SUMMARY_TAG,
-} from './CalendarEventTags';
+import { HOLD_TAG, PREP_TAG, SUMMARY_TAG } from './CalendarEventTags';
+
+export const MEETING_BUFFER_TITLE = 'Meeting buffer';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 
