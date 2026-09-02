@@ -17,7 +17,10 @@ export class ScriptPropertiesMeetingBufferStatePort implements MeetingBufferStat
         ProcessedEventSnapshot
       >;
       return new Map(Object.entries(parsed));
-    } catch {
+    } catch (e) {
+      console.error(
+        `Failed to parse processed event snapshots, resetting state: ${String(e)}`,
+      );
       return new Map<string, ProcessedEventSnapshot>();
     }
   }

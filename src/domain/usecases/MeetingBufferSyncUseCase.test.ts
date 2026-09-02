@@ -116,7 +116,11 @@ describe('MeetingBufferSyncUseCase', () => {
       const processedSnapshot = new Map([
         [
           'meeting-1',
-          { startMs: meetingStart.getTime(), endMs: meetingEnd.getTime() },
+          {
+            startMs: meetingStart.getTime(),
+            endMs: meetingEnd.getTime(),
+            title: 'Standup',
+          },
         ],
       ]);
       const { useCase, calendarPort } = createMocks(
@@ -149,7 +153,14 @@ describe('MeetingBufferSyncUseCase', () => {
       const newStart = new Date('2020-01-02T10:00:00Z');
       const newEnd = new Date('2020-01-02T10:30:00Z');
       const processedSnapshot = new Map([
-        ['meeting-1', { startMs: oldStart.getTime(), endMs: oldEnd.getTime() }],
+        [
+          'meeting-1',
+          {
+            startMs: oldStart.getTime(),
+            endMs: oldEnd.getTime(),
+            title: 'Standup',
+          },
+        ],
       ]);
       const { useCase, calendarPort } = createMocks(
         {
@@ -207,6 +218,80 @@ describe('MeetingBufferSyncUseCase', () => {
             `${SUMMARY_TAG} Standup`,
             newEnd,
             new Date(newEnd.getTime() + BUFFER_MS),
+          ),
+        ],
+      ]);
+    });
+
+    it('recreates buffers when an already-processed event is renamed with the same time slot', () => {
+      const meetingStart = new Date('2020-01-02T09:00:00Z');
+      const meetingEnd = new Date('2020-01-02T09:30:00Z');
+      const processedSnapshot = new Map([
+        [
+          'meeting-1',
+          {
+            startMs: meetingStart.getTime(),
+            endMs: meetingEnd.getTime(),
+            title: 'Old Name',
+          },
+        ],
+      ]);
+      const { useCase, calendarPort } = createMocks(
+        {
+          own: [
+            new CalendarEvent(
+              'meeting-1',
+              'New Name',
+              meetingStart,
+              meetingEnd,
+              false,
+              false,
+            ),
+          ],
+          hub: [
+            new CalendarEvent(
+              'prep-old-name',
+              `${PREP_TAG} Old Name`,
+              new Date(meetingStart.getTime() - BUFFER_MS),
+              meetingStart,
+              false,
+              false,
+            ),
+            new CalendarEvent(
+              'summary-old-name',
+              `${SUMMARY_TAG} Old Name`,
+              meetingEnd,
+              new Date(meetingEnd.getTime() + BUFFER_MS),
+              false,
+              false,
+            ),
+          ],
+        },
+        CONFIG,
+        processedSnapshot,
+      );
+
+      useCase.execute(NOW);
+
+      expect(calendarPort.deleteEvent.mock.calls).toEqual([
+        [hub, 'prep-old-name'],
+        [hub, 'summary-old-name'],
+      ]);
+      expect(calendarPort.createHoldPlaceholder.mock.calls).toEqual([
+        [
+          hub,
+          new HoldPlaceholder(
+            `${PREP_TAG} New Name`,
+            new Date(meetingStart.getTime() - BUFFER_MS),
+            meetingStart,
+          ),
+        ],
+        [
+          hub,
+          new HoldPlaceholder(
+            `${SUMMARY_TAG} New Name`,
+            meetingEnd,
+            new Date(meetingEnd.getTime() + BUFFER_MS),
           ),
         ],
       ]);
@@ -303,6 +388,7 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(savedSnapshots.get('meeting-1')).toEqual({
         startMs: meetingStart.getTime(),
         endMs: meetingEnd.getTime(),
+        title: 'Standup',
       });
     });
 
@@ -312,7 +398,11 @@ describe('MeetingBufferSyncUseCase', () => {
       const staleSnapshot = new Map([
         [
           'gone-event',
-          { startMs: goneStart.getTime(), endMs: goneEnd.getTime() },
+          {
+            startMs: goneStart.getTime(),
+            endMs: goneEnd.getTime(),
+            title: 'Gone Meeting',
+          },
         ],
       ]);
       const { useCase, statePort } = createMocks(

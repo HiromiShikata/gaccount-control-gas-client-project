@@ -61,11 +61,17 @@ export class MeetingBufferSyncUseCase {
 
     const allDesired =
       MeetingBufferReconciliation.computeDesiredBuffers(ownEvents);
+    const desiredForUnprocessed =
+      MeetingBufferReconciliation.computeDesiredBuffers(unprocessedOwnEvents);
     const existing =
       MeetingBufferReconciliation.selectExistingBuffers(hubEvents);
 
     const { toDelete } = HoldPlaceholderReconciliation.reconcile(
       allDesired,
+      existing,
+    );
+    const { toCreate } = HoldPlaceholderReconciliation.reconcile(
+      desiredForUnprocessed,
       existing,
     );
 
@@ -79,11 +85,6 @@ export class MeetingBufferSyncUseCase {
       this.calendarPort.deleteEvent(hub, event.id);
     }
 
-    const newDesired =
-      MeetingBufferReconciliation.computeDesiredBuffers(unprocessedOwnEvents);
-    const existingKeys = new Set(existing.map((e) => e.dedupKey()));
-    const toCreate = newDesired.filter((p) => !existingKeys.has(p.dedupKey()));
-
     for (const buffer of toCreate) {
       this.calendarPort.createHoldPlaceholder(hub, buffer);
     }
@@ -93,6 +94,7 @@ export class MeetingBufferSyncUseCase {
       updatedSnapshots.set(event.id, {
         startMs: event.startAt.getTime(),
         endMs: event.endAt.getTime(),
+        title: event.title,
       });
     }
     this.statePort.setProcessedEventSnapshots(updatedSnapshots);
@@ -106,7 +108,8 @@ export class MeetingBufferSyncUseCase {
     if (!snapshot) return false;
     return (
       snapshot.startMs === event.startAt.getTime() &&
-      snapshot.endMs === event.endAt.getTime()
+      snapshot.endMs === event.endAt.getTime() &&
+      snapshot.title === event.title
     );
   }
 
