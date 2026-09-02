@@ -1,4 +1,5 @@
 import { CalendarEvent } from '../entities/CalendarEvent';
+import { CalendarEventColor } from '../entities/CalendarEventColor';
 import { CalendarRef } from '../entities/CalendarRef';
 import { HoldPlaceholder } from '../entities/HoldPlaceholder';
 import {
@@ -37,6 +38,13 @@ const createMocks = (
     ),
     deleteEvent: jest.fn(
       (_calendar: CalendarRef, _eventId: string): void => {},
+    ),
+    setEventColor: jest.fn(
+      (
+        _calendar: CalendarRef,
+        _eventId: string,
+        _color: CalendarEventColor,
+      ): void => {},
     ),
   };
   const configPort = {

@@ -1,4 +1,5 @@
 import { CalendarEvent } from '../domain/entities/CalendarEvent';
+import { CalendarEventColor } from '../domain/entities/CalendarEventColor';
 import { CalendarRef } from '../domain/entities/CalendarRef';
 import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
 import { CalendarPort } from '../domain/usecases/adapter-interfaces/CalendarPort';
@@ -48,6 +49,19 @@ export class CalendarAppCalendarPort implements CalendarPort {
     const event = this.resolve(calendar).getEventById(eventId);
     if (event !== null) {
       event.deleteEvent();
+    }
+  }
+
+  setEventColor(
+    calendar: CalendarRef,
+    eventId: string,
+    color: CalendarEventColor,
+  ): void {
+    const event = this.resolve(calendar).getEventById(eventId);
+    if (event !== null) {
+      if (color === 'flamingo') {
+        event.setColor(CalendarApp.EventColor.PALE_RED);
+      }
     }
   }
 

@@ -6,6 +6,7 @@ import { ScriptPropertiesConfigPort } from './adapters/ScriptPropertiesConfigPor
 import { ScriptPropertiesConfigWritePort } from './adapters/ScriptPropertiesConfigWritePort';
 import { ScriptPropertiesMeetingBufferStatePort } from './adapters/ScriptPropertiesMeetingBufferStatePort';
 import { SyncConfiguration } from './domain/entities/SyncConfiguration';
+import { CalendarEventColorSyncUseCase } from './domain/usecases/CalendarEventColorSyncUseCase';
 import { CalendarHoldMirrorSyncUseCase } from './domain/usecases/CalendarHoldMirrorSyncUseCase';
 import { ClientProjectSetupUseCase } from './domain/usecases/ClientProjectSetupUseCase';
 import { MeetingBufferSyncUseCase } from './domain/usecases/MeetingBufferSyncUseCase';
@@ -37,6 +38,9 @@ function sync(): void {
       PropertiesService.getScriptProperties(),
     ),
   ).execute(now);
+  new CalendarEventColorSyncUseCase(calendarPort, configPort, logPort).execute(
+    now,
+  );
 }
 
 function createTrigger(): void {
