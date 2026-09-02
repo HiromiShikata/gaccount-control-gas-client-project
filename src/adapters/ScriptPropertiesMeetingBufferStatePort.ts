@@ -5,12 +5,8 @@ import {
 
 const PROPERTY_KEY = 'MEETING_BUFFER_PROCESSED_EVENT_SNAPSHOTS';
 
-export class ScriptPropertiesMeetingBufferStatePort
-  implements MeetingBufferStatePort
-{
-  constructor(
-    readonly properties: GoogleAppsScript.Properties.Properties,
-  ) {}
+export class ScriptPropertiesMeetingBufferStatePort implements MeetingBufferStatePort {
+  constructor(readonly properties: GoogleAppsScript.Properties.Properties) {}
 
   getProcessedEventSnapshots(): Map<string, ProcessedEventSnapshot> {
     const value = this.properties.getProperty(PROPERTY_KEY);
