@@ -60,7 +60,7 @@ export class MeetingBufferSyncUseCase {
     );
 
     const allDesired =
-      MeetingBufferReconciliation.computeDesiredBuffers(ownEvents);
+      MeetingBufferReconciliation.computeDesiredBuffers(qualifyingOwnEvents);
     const desiredForUnprocessed =
       MeetingBufferReconciliation.computeDesiredBuffers(unprocessedOwnEvents);
     const existing =
