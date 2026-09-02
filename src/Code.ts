@@ -5,6 +5,7 @@ import { ScriptAppTriggerPort } from './adapters/ScriptAppTriggerPort';
 import { ScriptPropertiesConfigPort } from './adapters/ScriptPropertiesConfigPort';
 import { ScriptPropertiesConfigWritePort } from './adapters/ScriptPropertiesConfigWritePort';
 import { SyncConfiguration } from './domain/entities/SyncConfiguration';
+import { CalendarEventColorSyncUseCase } from './domain/usecases/CalendarEventColorSyncUseCase';
 import { CalendarHoldMirrorSyncUseCase } from './domain/usecases/CalendarHoldMirrorSyncUseCase';
 import { ClientProjectSetupUseCase } from './domain/usecases/ClientProjectSetupUseCase';
 import { MeetingBufferSyncUseCase } from './domain/usecases/MeetingBufferSyncUseCase';
@@ -29,6 +30,9 @@ function sync(): void {
     ownDomain,
   );
   new MeetingBufferSyncUseCase(calendarPort, configPort, logPort).execute(now);
+  new CalendarEventColorSyncUseCase(calendarPort, configPort, logPort).execute(
+    now,
+  );
 }
 
 function createTrigger(): void {
