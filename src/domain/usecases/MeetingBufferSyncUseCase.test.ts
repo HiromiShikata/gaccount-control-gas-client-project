@@ -443,7 +443,7 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(savedSnapshots.has('gone-event')).toBe(false);
     });
 
-    it('deletes legacy bracket-format prep and summary events from the hub calendar', () => {
+    it('deletes legacy bracket-format prep events and legacy round-bracket summary events from the hub calendar', () => {
       const legacyPrepStart = new Date('2020-01-02T08:45:00Z');
       const legacyPrepEnd = new Date('2020-01-02T09:00:00Z');
       const legacySummaryStart = new Date('2020-01-02T09:30:00Z');
@@ -461,7 +461,7 @@ describe('MeetingBufferSyncUseCase', () => {
           ),
           new CalendarEvent(
             'legacy-summary',
-            '[SUMMARY] Standup',
+            '(SUMMARY) Standup',
             legacySummaryStart,
             legacySummaryEnd,
             false,
@@ -531,7 +531,7 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(logPort.error.mock.calls.length).toBe(1);
     });
 
-    it('deletes legacy bracket-format prep and summary buffer events found on the own calendar', () => {
+    it('deletes legacy bracket-format prep and round-bracket summary buffer events found on the own calendar', () => {
       const legacyPrepStart = new Date('2020-01-02T08:55:00Z');
       const legacyPrepEnd = new Date('2020-01-02T09:00:00Z');
       const legacySummaryStart = new Date('2020-01-02T09:30:00Z');
