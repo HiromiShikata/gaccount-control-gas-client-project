@@ -100,11 +100,18 @@ describe('MeetingBufferReconciliation', () => {
       expect(buffers).toEqual([]);
     });
 
-    it('skips legacy bracket-format summary events to prevent generating duplicate new-format buffers', () => {
+    it('skips legacy round-bracket (SUMMARY) format events to prevent generating duplicate new-format buffers', () => {
       const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
         timedEvent('a', `${LEGACY_SUMMARY_TAG} Standup`, START, END),
       ]);
       expect(buffers).toEqual([]);
+    });
+
+    it('creates summary buffer with [SUMMARY] square-bracket title prefix', () => {
+      const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
+        timedEvent('a', 'Standup', START, END),
+      ]);
+      expect(buffers[1].title).toBe('[SUMMARY] Standup');
     });
 
     it('creates buffers for multiple qualifying events', () => {
@@ -140,7 +147,7 @@ describe('MeetingBufferReconciliation', () => {
   });
 
   describe('selectLegacyBuffers', () => {
-    it('selects events whose title starts with the legacy bracket prep or summary tag', () => {
+    it('selects events whose title starts with the legacy [PREP] or (SUMMARY) tag', () => {
       const legacy = MeetingBufferReconciliation.selectLegacyBuffers([
         timedEvent('a', `${LEGACY_PREP_TAG} Standup`, START, END),
         timedEvent('b', `${LEGACY_SUMMARY_TAG} Standup`, START, END),
@@ -160,6 +167,16 @@ describe('MeetingBufferReconciliation', () => {
           START,
           END,
         ),
+      ]);
+    });
+
+    it('selects round-bracket (SUMMARY) format events as legacy', () => {
+      const legacy = MeetingBufferReconciliation.selectLegacyBuffers([
+        timedEvent('a', '(SUMMARY) Standup', START, END),
+        timedEvent('b', 'Standup', START, END),
+      ]);
+      expect(legacy).toEqual([
+        new ExistingHoldPlaceholder('a', '(SUMMARY) Standup', START, END),
       ]);
     });
 

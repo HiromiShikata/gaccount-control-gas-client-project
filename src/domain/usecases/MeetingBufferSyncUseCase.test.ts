@@ -110,6 +110,31 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
     });
 
+    it('creates hub calendar summary buffer events with [SUMMARY] square-bracket prefix', () => {
+      const meetingStart = new Date('2020-01-02T09:00:00Z');
+      const meetingEnd = new Date('2020-01-02T09:30:00Z');
+      const { useCase, calendarPort } = createMocks({
+        own: [
+          new CalendarEvent(
+            'meeting-1',
+            'Standup',
+            meetingStart,
+            meetingEnd,
+            false,
+            false,
+          ),
+        ],
+        hub: [],
+      });
+
+      useCase.execute(NOW);
+
+      const createdTitles = calendarPort.createHoldPlaceholder.mock.calls.map(
+        ([, ph]: [unknown, HoldPlaceholder]) => ph.title,
+      );
+      expect(createdTitles).toContain('[SUMMARY] Standup');
+    });
+
     it('does not recreate buffers manually deleted from the hub for an already-processed event', () => {
       const meetingStart = new Date('2020-01-02T09:00:00Z');
       const meetingEnd = new Date('2020-01-02T09:30:00Z');
@@ -418,7 +443,7 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(savedSnapshots.has('gone-event')).toBe(false);
     });
 
-    it('deletes legacy bracket-format prep and summary events from the hub calendar', () => {
+    it('deletes legacy bracket-format prep events and legacy round-bracket summary events from the hub calendar', () => {
       const legacyPrepStart = new Date('2020-01-02T08:45:00Z');
       const legacyPrepEnd = new Date('2020-01-02T09:00:00Z');
       const legacySummaryStart = new Date('2020-01-02T09:30:00Z');
@@ -436,7 +461,7 @@ describe('MeetingBufferSyncUseCase', () => {
           ),
           new CalendarEvent(
             'legacy-summary',
-            '[SUMMARY] Standup',
+            '(SUMMARY) Standup',
             legacySummaryStart,
             legacySummaryEnd,
             false,
@@ -506,7 +531,7 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(logPort.error.mock.calls.length).toBe(1);
     });
 
-    it('deletes legacy bracket-format prep and summary buffer events found on the own calendar', () => {
+    it('deletes legacy bracket-format prep and round-bracket summary buffer events found on the own calendar', () => {
       const legacyPrepStart = new Date('2020-01-02T08:55:00Z');
       const legacyPrepEnd = new Date('2020-01-02T09:00:00Z');
       const legacySummaryStart = new Date('2020-01-02T09:30:00Z');
