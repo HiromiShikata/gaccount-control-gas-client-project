@@ -107,6 +107,13 @@ describe('MeetingBufferReconciliation', () => {
       expect(buffers).toEqual([]);
     });
 
+    it('creates summary buffer with [SUMMARY] square-bracket title prefix', () => {
+      const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
+        timedEvent('a', 'Standup', START, END),
+      ]);
+      expect(buffers[1].title).toBe('[SUMMARY] Standup');
+    });
+
     it('creates buffers for multiple qualifying events', () => {
       const start2 = new Date('2020-01-01T14:00:00Z');
       const end2 = new Date('2020-01-01T15:00:00Z');
@@ -160,6 +167,16 @@ describe('MeetingBufferReconciliation', () => {
           START,
           END,
         ),
+      ]);
+    });
+
+    it('selects round-bracket (SUMMARY) format events as legacy', () => {
+      const legacy = MeetingBufferReconciliation.selectLegacyBuffers([
+        timedEvent('a', '(SUMMARY) Standup', START, END),
+        timedEvent('b', 'Standup', START, END),
+      ]);
+      expect(legacy).toEqual([
+        new ExistingHoldPlaceholder('a', '(SUMMARY) Standup', START, END),
       ]);
     });
 

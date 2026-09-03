@@ -110,6 +110,31 @@ describe('MeetingBufferSyncUseCase', () => {
       expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
     });
 
+    it('creates hub calendar summary buffer events with [SUMMARY] square-bracket prefix', () => {
+      const meetingStart = new Date('2020-01-02T09:00:00Z');
+      const meetingEnd = new Date('2020-01-02T09:30:00Z');
+      const { useCase, calendarPort } = createMocks({
+        own: [
+          new CalendarEvent(
+            'meeting-1',
+            'Standup',
+            meetingStart,
+            meetingEnd,
+            false,
+            false,
+          ),
+        ],
+        hub: [],
+      });
+
+      useCase.execute(NOW);
+
+      const createdTitles = calendarPort.createHoldPlaceholder.mock.calls.map(
+        ([, ph]: [unknown, HoldPlaceholder]) => ph.title,
+      );
+      expect(createdTitles).toContain('[SUMMARY] Standup');
+    });
+
     it('does not recreate buffers manually deleted from the hub for an already-processed event', () => {
       const meetingStart = new Date('2020-01-02T09:00:00Z');
       const meetingEnd = new Date('2020-01-02T09:30:00Z');
