@@ -1,4 +1,5 @@
 import { CalendarEvent } from './CalendarEvent';
+import { LEGACY_PREP_TAG, LEGACY_SUMMARY_TAG } from './CalendarEventTags';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 import { HOLD_TAG } from './HoldPlaceholderReconciliation';
@@ -92,6 +93,20 @@ describe('MeetingBufferReconciliation', () => {
       expect(buffers).toEqual([]);
     });
 
+    it('skips legacy bracket-format prep events to prevent generating duplicate new-format buffers', () => {
+      const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
+        timedEvent('a', `${LEGACY_PREP_TAG} Standup`, START, END),
+      ]);
+      expect(buffers).toEqual([]);
+    });
+
+    it('skips legacy bracket-format summary events to prevent generating duplicate new-format buffers', () => {
+      const buffers = MeetingBufferReconciliation.computeDesiredBuffers([
+        timedEvent('a', `${LEGACY_SUMMARY_TAG} Standup`, START, END),
+      ]);
+      expect(buffers).toEqual([]);
+    });
+
     it('creates buffers for multiple qualifying events', () => {
       const start2 = new Date('2020-01-01T14:00:00Z');
       const end2 = new Date('2020-01-01T15:00:00Z');
@@ -121,6 +136,39 @@ describe('MeetingBufferReconciliation', () => {
           new Date(end2.getTime() + BUFFER_MS),
         ),
       ]);
+    });
+  });
+
+  describe('selectLegacyBuffers', () => {
+    it('selects events whose title starts with the legacy bracket prep or summary tag', () => {
+      const legacy = MeetingBufferReconciliation.selectLegacyBuffers([
+        timedEvent('a', `${LEGACY_PREP_TAG} Standup`, START, END),
+        timedEvent('b', `${LEGACY_SUMMARY_TAG} Standup`, START, END),
+        timedEvent('c', `${PREP_TAG} Standup`, START, END),
+        timedEvent('d', 'Standup', START, END),
+      ]);
+      expect(legacy).toEqual([
+        new ExistingHoldPlaceholder(
+          'a',
+          `${LEGACY_PREP_TAG} Standup`,
+          START,
+          END,
+        ),
+        new ExistingHoldPlaceholder(
+          'b',
+          `${LEGACY_SUMMARY_TAG} Standup`,
+          START,
+          END,
+        ),
+      ]);
+    });
+
+    it('returns an empty list when no legacy buffer events exist', () => {
+      const legacy = MeetingBufferReconciliation.selectLegacyBuffers([
+        timedEvent('a', `${PREP_TAG} Standup`, START, END),
+        timedEvent('b', 'Standup', START, END),
+      ]);
+      expect(legacy).toEqual([]);
     });
   });
 
