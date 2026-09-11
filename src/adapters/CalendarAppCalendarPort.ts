@@ -48,7 +48,11 @@ export class CalendarAppCalendarPort implements CalendarPort {
   deleteEvent(calendar: CalendarRef, eventId: string): void {
     const event = this.resolve(calendar).getEventById(eventId);
     if (event !== null) {
-      event.deleteEvent();
+      try {
+        event.deleteEvent();
+      } catch (error) {
+        console.error(`Failed to delete event ${eventId}: ${String(error)}`);
+      }
     }
   }
 
@@ -59,8 +63,14 @@ export class CalendarAppCalendarPort implements CalendarPort {
   ): void {
     const event = this.resolve(calendar).getEventById(eventId);
     if (event !== null) {
-      if (color === 'flamingo') {
-        event.setColor(CalendarApp.EventColor.PALE_RED);
+      try {
+        if (color === 'flamingo') {
+          event.setColor(CalendarApp.EventColor.PALE_RED);
+        }
+      } catch (error) {
+        console.error(
+          `Failed to set color of event ${eventId}: ${String(error)}`,
+        );
       }
     }
   }
