@@ -40,6 +40,109 @@ const setupCalendarApp = (
 };
 
 describe('CalendarAppCalendarPort', () => {
+  describe('listTimedEvents', () => {
+    const makeGasEvent = (
+      id: string,
+      title: string,
+      startMs: number,
+      endMs: number,
+    ): GoogleAppsScript.Calendar.CalendarEvent =>
+      ({
+        getId: jest.fn(() => id),
+        getTitle: jest.fn(() => title),
+        getStartTime: jest.fn(() => ({ getTime: () => startMs })),
+        getEndTime: jest.fn(() => ({ getTime: () => endMs })),
+        isAllDayEvent: jest.fn(() => false),
+        getMyStatus: jest.fn(() => ''),
+      }) as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+
+    it('calls getEvents only once when called twice with identical arguments', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-15T00:00:00Z');
+      const getEvents = jest.fn(() => [
+        makeGasEvent('ev-1', 'Meeting', from.getTime(), to.getTime()),
+      ]);
+      const calendar = {
+        getEvents,
+        getEventById: jest.fn(),
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.listTimedEvents(makeOwnCalendarRef(), from, to);
+      port.listTimedEvents(makeOwnCalendarRef(), from, to);
+
+      expect(getEvents).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls getEvents separately for different date ranges on the same calendar', () => {
+      const from1 = new Date('2020-01-01T00:00:00Z');
+      const to1 = new Date('2020-01-15T00:00:00Z');
+      const from2 = new Date('2020-02-01T00:00:00Z');
+      const to2 = new Date('2020-02-15T00:00:00Z');
+      const getEvents = jest.fn(() => []);
+      const calendar = {
+        getEvents,
+        getEventById: jest.fn(),
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.listTimedEvents(makeOwnCalendarRef(), from1, to1);
+      port.listTimedEvents(makeOwnCalendarRef(), from2, to2);
+
+      expect(getEvents).toHaveBeenCalledTimes(2);
+    });
+
+    it('calls getEvents separately for own and hub calendars with the same date range', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-15T00:00:00Z');
+      const getEvents = jest.fn(() => []);
+      const calendar = {
+        getEvents,
+        getEventById: jest.fn(),
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.listTimedEvents(makeOwnCalendarRef(), from, to);
+      port.listTimedEvents(makeHubCalendarRef(), from, to);
+
+      expect(getEvents).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns the same event list on repeated calls with identical arguments', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-15T00:00:00Z');
+      const eventStart = new Date('2020-01-05T09:00:00Z');
+      const eventEnd = new Date('2020-01-05T10:00:00Z');
+      const getEvents = jest.fn(() => [
+        makeGasEvent(
+          'ev-1',
+          'Standup',
+          eventStart.getTime(),
+          eventEnd.getTime(),
+        ),
+      ]);
+      const calendar = {
+        getEvents,
+        getEventById: jest.fn(),
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      const first = port.listTimedEvents(makeOwnCalendarRef(), from, to);
+      const second = port.listTimedEvents(makeOwnCalendarRef(), from, to);
+
+      expect(first).toEqual(second);
+      expect(first[0].id).toBe('ev-1');
+    });
+  });
+
   describe('deleteEvent', () => {
     it('does not throw when deleteEvent throws because the event was already deleted', () => {
       const alreadyDeletedEvent = makeEvent({

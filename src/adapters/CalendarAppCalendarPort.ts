@@ -5,6 +5,8 @@ import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
 import { CalendarPort } from '../domain/usecases/adapter-interfaces/CalendarPort';
 
 export class CalendarAppCalendarPort implements CalendarPort {
+  private readonly listTimedEventsCache = new Map<string, CalendarEvent[]>();
+
   exists(calendar: CalendarRef): boolean {
     if (calendar.type === 'own') {
       return true;
@@ -17,7 +19,13 @@ export class CalendarAppCalendarPort implements CalendarPort {
     from: Date,
     to: Date,
   ): CalendarEvent[] {
-    return this.resolve(calendar)
+    const calendarId = calendar.type === 'own' ? 'own' : calendar.hubCalendarId;
+    const key = `${calendarId}_${from.getTime()}_${to.getTime()}`;
+    const cached = this.listTimedEventsCache.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const events = this.resolve(calendar)
       .getEvents(from, to)
       .map(
         (event) =>
@@ -30,6 +38,8 @@ export class CalendarAppCalendarPort implements CalendarPort {
             event.getMyStatus() === CalendarApp.GuestStatus.NO,
           ),
       );
+    this.listTimedEventsCache.set(key, events);
+    return events;
   }
 
   createHoldPlaceholder(
