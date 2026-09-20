@@ -144,6 +144,40 @@ describe('CalendarAppCalendarPort', () => {
   });
 
   describe('deleteEvent', () => {
+    it('does not call getEventById when the event was already loaded by listTimedEvents', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-31T00:00:00Z');
+      const eventId = 'ev-1';
+      const gasEvent = {
+        getId: jest.fn(() => eventId),
+        getTitle: jest.fn(() => 'Meeting'),
+        getStartTime: jest.fn(() => ({
+          getTime: () => new Date('2020-01-05T09:00:00Z').getTime(),
+        })),
+        getEndTime: jest.fn(() => ({
+          getTime: () => new Date('2020-01-05T10:00:00Z').getTime(),
+        })),
+        isAllDayEvent: jest.fn(() => false),
+        getMyStatus: jest.fn(() => ''),
+        deleteEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const getEvents = jest.fn(() => [gasEvent]);
+      const getEventById = jest.fn(() => gasEvent);
+      const calendar = {
+        getEvents,
+        getEventById,
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.listTimedEvents(makeOwnCalendarRef(), from, to);
+      port.deleteEvent(makeOwnCalendarRef(), eventId);
+
+      expect(getEventById).not.toHaveBeenCalled();
+      expect(gasEvent.deleteEvent).toHaveBeenCalledTimes(1);
+    });
+
     it('does not throw when deleteEvent throws because the event was already deleted', () => {
       const alreadyDeletedEvent = makeEvent({
         deleteEvent: () => {
@@ -206,7 +240,62 @@ describe('CalendarAppCalendarPort', () => {
     });
   });
 
+  describe('calendar resolution', () => {
+    it('calls getCalendarById only once for multiple deleteEvent calls on the same hub calendar', () => {
+      const event = makeEvent();
+      const calendar = makeCalendar(event);
+      const getCalendarById = jest.fn((_id: string) => calendar);
+      (globalThis as unknown as Record<string, unknown>).CalendarApp = {
+        getDefaultCalendar: jest.fn(() => calendar),
+        getCalendarById,
+        GuestStatus: { NO: 'NO' },
+        EventTransparency: { OPAQUE: 'OPAQUE' },
+        EventColor: { PALE_RED: 'PALE_RED' },
+      };
+      const port = new CalendarAppCalendarPort();
+
+      port.deleteEvent(makeHubCalendarRef(), 'event-1');
+      port.deleteEvent(makeHubCalendarRef(), 'event-2');
+
+      expect(getCalendarById).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('setEventColor', () => {
+    it('does not call getEventById when the event was already loaded by listTimedEvents', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-31T00:00:00Z');
+      const eventId = 'hub-ev-1';
+      const gasEvent = {
+        getId: jest.fn(() => eventId),
+        getTitle: jest.fn(() => 'External Meeting'),
+        getStartTime: jest.fn(() => ({
+          getTime: () => new Date('2020-01-10T14:00:00Z').getTime(),
+        })),
+        getEndTime: jest.fn(() => ({
+          getTime: () => new Date('2020-01-10T15:00:00Z').getTime(),
+        })),
+        isAllDayEvent: jest.fn(() => false),
+        getMyStatus: jest.fn(() => ''),
+        setColor: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const getEvents = jest.fn(() => [gasEvent]);
+      const getEventById = jest.fn(() => gasEvent);
+      const calendar = {
+        getEvents,
+        getEventById,
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.listTimedEvents(makeHubCalendarRef(), from, to);
+      port.setEventColor(makeHubCalendarRef(), eventId, 'flamingo');
+
+      expect(getEventById).not.toHaveBeenCalled();
+      expect(gasEvent.setColor).toHaveBeenCalledWith('PALE_RED');
+    });
+
     it('does not throw when setColor throws because the event was already deleted', () => {
       const alreadyDeletedEvent = makeEvent({
         setColor: () => {
