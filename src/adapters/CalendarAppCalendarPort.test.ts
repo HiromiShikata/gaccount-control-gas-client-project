@@ -1,4 +1,5 @@
 import { CalendarRef } from '../domain/entities/CalendarRef';
+import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
 import { CalendarAppCalendarPort } from './CalendarAppCalendarPort';
 
 const makeOwnCalendarRef = (): CalendarRef => ({ type: 'own' });
@@ -258,6 +259,30 @@ describe('CalendarAppCalendarPort', () => {
       port.deleteEvent(makeHubCalendarRef(), 'event-2');
 
       expect(getCalendarById).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createHoldPlaceholder', () => {
+    it('does not call setTransparency on the created event', () => {
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const createdEvent = {
+        removeAllReminders: jest.fn(),
+        setTransparency: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => createdEvent),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder);
+
+      expect(createdEvent.setTransparency).not.toHaveBeenCalled();
     });
   });
 

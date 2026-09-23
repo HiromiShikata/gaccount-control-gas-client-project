@@ -59,7 +59,6 @@ export class CalendarAppCalendarPort implements CalendarPort {
       placeholder.endAt,
     );
     event.removeAllReminders();
-    event.setTransparency(CalendarApp.EventTransparency.OPAQUE);
   }
 
   deleteEvent(calendar: CalendarRef, eventId: string): void {
