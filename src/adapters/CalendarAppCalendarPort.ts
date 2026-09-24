@@ -53,12 +53,18 @@ export class CalendarAppCalendarPort implements CalendarPort {
     calendar: CalendarRef,
     placeholder: HoldPlaceholder,
   ): void {
-    const event = this.resolve(calendar).createEvent(
-      placeholder.title,
-      placeholder.startAt,
-      placeholder.endAt,
-    );
-    event.removeAllReminders();
+    try {
+      const event = this.resolve(calendar).createEvent(
+        placeholder.title,
+        placeholder.startAt,
+        placeholder.endAt,
+      );
+      event.removeAllReminders();
+    } catch (error) {
+      console.error(
+        `Failed to create hold placeholder ${placeholder.title}: ${String(error)}`,
+      );
+    }
   }
 
   deleteEvent(calendar: CalendarRef, eventId: string): void {

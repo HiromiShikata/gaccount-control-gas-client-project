@@ -284,6 +284,59 @@ describe('CalendarAppCalendarPort', () => {
 
       expect(createdEvent.setTransparency).not.toHaveBeenCalled();
     });
+
+    it('does not throw when createEvent throws', () => {
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => {
+          throw new Error(
+            'You have been creating or deleting too many calendars or calendar events in a short time',
+          );
+        }),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      expect(() =>
+        port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
+      ).not.toThrow();
+    });
+
+    it('logs an error to console.error when createEvent throws', () => {
+      const consoleSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => {
+          throw new Error(
+            'You have been creating or deleting too many calendars or calendar events in a short time',
+          );
+        }),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder);
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to create hold placeholder'),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining(placeholder.title),
+      );
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('setEventColor', () => {
