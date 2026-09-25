@@ -4,12 +4,10 @@ import { GasLogPort } from './adapters/GasLogPort';
 import { ScriptAppTriggerPort } from './adapters/ScriptAppTriggerPort';
 import { ScriptPropertiesConfigPort } from './adapters/ScriptPropertiesConfigPort';
 import { ScriptPropertiesConfigWritePort } from './adapters/ScriptPropertiesConfigWritePort';
-import { ScriptPropertiesMeetingBufferStatePort } from './adapters/ScriptPropertiesMeetingBufferStatePort';
 import { SyncConfiguration } from './domain/entities/SyncConfiguration';
 import { CalendarEventColorSyncUseCase } from './domain/usecases/CalendarEventColorSyncUseCase';
 import { CalendarHoldMirrorSyncUseCase } from './domain/usecases/CalendarHoldMirrorSyncUseCase';
 import { ClientProjectSetupUseCase } from './domain/usecases/ClientProjectSetupUseCase';
-import { MeetingBufferSyncUseCase } from './domain/usecases/MeetingBufferSyncUseCase';
 
 declare const CLIENT_SETUP_CONFIG: {
   hubCalendarId: string;
@@ -30,14 +28,6 @@ function sync(): void {
     now,
     ownDomain,
   );
-  new MeetingBufferSyncUseCase(
-    calendarPort,
-    configPort,
-    logPort,
-    new ScriptPropertiesMeetingBufferStatePort(
-      PropertiesService.getScriptProperties(),
-    ),
-  ).execute(now);
   new CalendarEventColorSyncUseCase(calendarPort, configPort, logPort).execute(
     now,
   );
