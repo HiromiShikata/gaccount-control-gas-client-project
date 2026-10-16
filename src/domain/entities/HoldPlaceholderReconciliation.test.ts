@@ -166,7 +166,7 @@ describe('HoldPlaceholderReconciliation', () => {
           MEETING_OK_TAG,
           MEETING_OK_TITLE,
         );
-      expect(desired).toEqual([]);
+      expect(desired).toEqual([new HoldPlaceholder(HOLD_TAG, START, END)]);
     });
 
     it('skips hub summary buffer events to prevent mirroring them to the own calendar', () => {
@@ -177,7 +177,7 @@ describe('HoldPlaceholderReconciliation', () => {
           MEETING_OK_TAG,
           MEETING_OK_TITLE,
         );
-      expect(desired).toEqual([]);
+      expect(desired).toEqual([new HoldPlaceholder(HOLD_TAG, START, END)]);
     });
 
     it('skips legacy bracket-format hub prep events to prevent mirroring them to the own calendar', () => {
@@ -188,7 +188,7 @@ describe('HoldPlaceholderReconciliation', () => {
           MEETING_OK_TAG,
           MEETING_OK_TITLE,
         );
-      expect(desired).toEqual([]);
+      expect(desired).toEqual([new HoldPlaceholder(HOLD_TAG, START, END)]);
     });
 
     it('skips legacy bracket-format hub summary events to prevent mirroring them to the own calendar', () => {
@@ -199,7 +199,7 @@ describe('HoldPlaceholderReconciliation', () => {
           MEETING_OK_TAG,
           MEETING_OK_TITLE,
         );
-      expect(desired).toEqual([]);
+      expect(desired).toEqual([new HoldPlaceholder(HOLD_TAG, START, END)]);
     });
 
     it('deduplicates placeholders sharing start, end, and title', () => {
