@@ -1,11 +1,5 @@
 import { CalendarEvent } from './CalendarEvent';
-import {
-  HOLD_TAG,
-  LEGACY_PREP_TAG,
-  LEGACY_SUMMARY_TAG,
-  PREP_TAG,
-  SUMMARY_TAG,
-} from './CalendarEventTags';
+import { HOLD_TAG } from './CalendarEventTags';
 import { ExistingHoldPlaceholder } from './ExistingHoldPlaceholder';
 import { HoldPlaceholder } from './HoldPlaceholder';
 
@@ -42,10 +36,6 @@ export class HoldPlaceholderReconciliation {
       .filter((event) => !event.isAllDay)
       .filter((event) => !event.title.startsWith(ownHoldPrefix))
       .filter((event) => !event.isDeclined)
-      .filter((event) => !event.title.startsWith(PREP_TAG))
-      .filter((event) => !event.title.startsWith(SUMMARY_TAG))
-      .filter((event) => !event.title.startsWith(LEGACY_PREP_TAG))
-      .filter((event) => !event.title.startsWith(LEGACY_SUMMARY_TAG))
       .map(
         (event) =>
           new HoldPlaceholder(
