@@ -8,12 +8,25 @@ export { HOLD_TAG };
 export class HoldPlaceholderReconciliation {
   static computePushDesiredPlaceholders(
     ownEvents: CalendarEvent[],
+    hubEvents: CalendarEvent[],
     ownDomain: string,
   ): HoldPlaceholder[] {
+    const hubDirectInviteTimeRangeKeys = new Set(
+      hubEvents
+        .filter((event) => !event.title.includes(HOLD_TAG))
+        .filter((event) => !event.isDeclined)
+        .map((event) => `${event.startAt.getTime()}_${event.endAt.getTime()}`),
+    );
     const desired = ownEvents
       .filter((event) => !event.isAllDay)
       .filter((event) => !event.title.includes(HOLD_TAG))
       .filter((event) => !event.isDeclined)
+      .filter(
+        (event) =>
+          !hubDirectInviteTimeRangeKeys.has(
+            `${event.startAt.getTime()}_${event.endAt.getTime()}`,
+          ),
+      )
       .map(
         (event) =>
           new HoldPlaceholder(

@@ -216,5 +216,45 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
         );
       expect(enumeratedCalendarTypes.sort()).toEqual(['hub', 'own']);
     });
+
+    it('does not push a hold placeholder for an own event already present as a direct non-hold invite on the hub at the exact same time', () => {
+      const meetingStart = new Date('2020-01-01T09:00:00Z');
+      const meetingEnd = new Date('2020-01-01T09:30:00Z');
+
+      const ownEvents: CalendarEvent[] = [
+        new CalendarEvent(
+          'own-meeting',
+          'Weekly scrum planning',
+          meetingStart,
+          meetingEnd,
+          false,
+          false,
+        ),
+      ];
+      const hubEvents: CalendarEvent[] = [
+        new CalendarEvent(
+          'hub-direct-invite',
+          'Weekly scrum planning',
+          meetingStart,
+          meetingEnd,
+          false,
+          false,
+        ),
+      ];
+
+      const { useCase, calendarPort } = createMocks({
+        own: ownEvents,
+        hub: hubEvents,
+      });
+
+      useCase.execute(NOW, OWN_DOMAIN);
+
+      const pushedToHubCalls =
+        calendarPort.createHoldPlaceholder.mock.calls.filter(
+          ([calendar]: [CalendarRef, HoldPlaceholder]) =>
+            calendar.type === 'hub',
+        );
+      expect(pushedToHubCalls).toEqual([]);
+    });
   });
 });

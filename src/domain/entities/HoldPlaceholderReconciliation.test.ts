@@ -40,6 +40,7 @@ describe('HoldPlaceholderReconciliation', () => {
       const desired =
         HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
           [timedEvent('a', 'Standup', START, END)],
+          [],
           OWN_DOMAIN,
         );
       expect(desired).toEqual([
@@ -51,6 +52,7 @@ describe('HoldPlaceholderReconciliation', () => {
       const desired =
         HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
           [timedEvent('a', 'Offsite', START, END, { isAllDay: true })],
+          [],
           OWN_DOMAIN,
         );
       expect(desired).toEqual([]);
@@ -60,6 +62,7 @@ describe('HoldPlaceholderReconciliation', () => {
       const desired =
         HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
           [timedEvent('a', `${HOLD_TAG} other.com Meeting`, START, END)],
+          [],
           OWN_DOMAIN,
         );
       expect(desired).toEqual([]);
@@ -69,6 +72,7 @@ describe('HoldPlaceholderReconciliation', () => {
       const desired =
         HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
           [timedEvent('a', 'Standup', START, END, { isDeclined: true })],
+          [],
           OWN_DOMAIN,
         );
       expect(desired).toEqual([]);
@@ -81,6 +85,60 @@ describe('HoldPlaceholderReconciliation', () => {
             timedEvent('a', 'Standup', START, END),
             timedEvent('b', 'Standup', START, END),
           ],
+          [],
+          OWN_DOMAIN,
+        );
+      expect(desired).toEqual([
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+      ]);
+    });
+
+    it('excludes an own event already present as a direct non-hold invite on the hub at the exact same time', () => {
+      const desired =
+        HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
+          [timedEvent('a', 'Weekly scrum planning', START, END)],
+          [timedEvent('h', 'Weekly scrum planning', START, END)],
+          OWN_DOMAIN,
+        );
+      expect(desired).toEqual([]);
+    });
+
+    it('still produces the placeholder when no hub event occupies the exact same time range', () => {
+      const desired =
+        HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
+          [timedEvent('a', 'Standup', START, END)],
+          [
+            timedEvent(
+              'h',
+              'Unrelated meeting',
+              new Date('2020-01-01T10:00:00Z'),
+              new Date('2020-01-01T10:30:00Z'),
+            ),
+          ],
+          OWN_DOMAIN,
+        );
+      expect(desired).toEqual([
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+      ]);
+    });
+
+    it('still produces the placeholder when the coinciding hub event is itself a hold placeholder', () => {
+      const desired =
+        HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
+          [timedEvent('a', 'Standup', START, END)],
+          [timedEvent('h', `${HOLD_TAG} other.com Standup`, START, END)],
+          OWN_DOMAIN,
+        );
+      expect(desired).toEqual([
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+      ]);
+    });
+
+    it('still produces the placeholder when the coinciding hub event is declined', () => {
+      const desired =
+        HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
+          [timedEvent('a', 'Standup', START, END)],
+          [timedEvent('h', 'Standup', START, END, { isDeclined: true })],
           OWN_DOMAIN,
         );
       expect(desired).toEqual([
