@@ -57,6 +57,7 @@ export class CalendarHoldMirrorSyncUseCase {
     const desired =
       HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
         ownEvents,
+        hubEvents,
         ownDomain,
       );
     const existing =
