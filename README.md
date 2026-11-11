@@ -22,7 +22,13 @@ now + `SYNC_DAYS` days:
 
 `{ownDomain}` is derived at runtime from the active user's email address.
 Reconciliation deletes stale placeholders and creates missing ones; the
-deduplication key is start time, end time, and title.
+deduplication key is start time, end time, and title. On the hub, when several
+placeholders of this account share one key, the copy with the smallest event id
+is kept and every other copy is deleted, whether or not the key is still desired.
+
+Each run holds the Apps Script script lock for its whole duration. A run that
+cannot acquire the lock within one second logs a message and skips; the next
+15-minute run does the work, so overlapping triggers never create duplicates.
 
 ## Architecture
 

@@ -2,12 +2,14 @@ import { CalendarAppCalendarPort } from './adapters/CalendarAppCalendarPort';
 import { CalendarAppCalendarSubscriptionPort } from './adapters/CalendarAppCalendarSubscriptionPort';
 import { GasLogPort } from './adapters/GasLogPort';
 import { ScriptAppTriggerPort } from './adapters/ScriptAppTriggerPort';
+import { LockServiceScriptLockPort } from './adapters/LockServiceScriptLockPort';
 import { ScriptPropertiesConfigPort } from './adapters/ScriptPropertiesConfigPort';
 import { ScriptPropertiesConfigWritePort } from './adapters/ScriptPropertiesConfigWritePort';
 import { SyncConfiguration } from './domain/entities/SyncConfiguration';
 import { CalendarEventColorSyncUseCase } from './domain/usecases/CalendarEventColorSyncUseCase';
 import { CalendarHoldMirrorSyncUseCase } from './domain/usecases/CalendarHoldMirrorSyncUseCase';
 import { ClientProjectSetupUseCase } from './domain/usecases/ClientProjectSetupUseCase';
+import { SyncRunUseCase } from './domain/usecases/SyncRunUseCase';
 
 declare const CLIENT_SETUP_CONFIG: {
   hubCalendarId: string;
@@ -17,20 +19,28 @@ declare const CLIENT_SETUP_CONFIG: {
 };
 
 function sync(): void {
-  const now = new Date();
-  const calendarPort = new CalendarAppCalendarPort();
-  const configPort = new ScriptPropertiesConfigPort(
-    PropertiesService.getScriptProperties(),
-  );
   const logPort = new GasLogPort();
-  const ownDomain = Session.getActiveUser().getEmail().split('@')[1];
-  new CalendarHoldMirrorSyncUseCase(calendarPort, configPort, logPort).execute(
-    now,
-    ownDomain,
-  );
-  new CalendarEventColorSyncUseCase(calendarPort, configPort, logPort).execute(
-    now,
-  );
+  new SyncRunUseCase(
+    new LockServiceScriptLockPort(LockService.getScriptLock()),
+    logPort,
+  ).execute(() => {
+    const now = new Date();
+    const calendarPort = new CalendarAppCalendarPort();
+    const configPort = new ScriptPropertiesConfigPort(
+      PropertiesService.getScriptProperties(),
+    );
+    const ownDomain = Session.getActiveUser().getEmail().split('@')[1];
+    new CalendarHoldMirrorSyncUseCase(
+      calendarPort,
+      configPort,
+      logPort,
+    ).execute(now, ownDomain);
+    new CalendarEventColorSyncUseCase(
+      calendarPort,
+      configPort,
+      logPort,
+    ).execute(now);
+  });
 }
 
 function createTrigger(): void {
