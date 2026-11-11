@@ -258,3 +258,119 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
     });
   });
 });
+
+describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
+  const hub: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
+  const own: CalendarRef = { type: 'own' };
+  const START = new Date('2020-01-01T09:00:00Z');
+  const END = new Date('2020-01-01T09:30:00Z');
+
+  it('deletes every copy of a duplicated hub placeholder but one, and creates none, when the key is desired', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent('own-standup', 'Standup', START, END, false, false),
+      ],
+      hub: [
+        new CalendarEvent(
+          'hub-placeholder-b',
+          `${HOLD_TAG} ${OWN_DOMAIN} Standup`,
+          START,
+          END,
+          false,
+          false,
+        ),
+        new CalendarEvent(
+          'hub-placeholder-a',
+          `${HOLD_TAG} ${OWN_DOMAIN} Standup`,
+          START,
+          END,
+          false,
+          false,
+        ),
+      ],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent.mock.calls).toEqual([
+      [hub, 'hub-placeholder-b'],
+    ]);
+    expect(
+      calendarPort.createHoldPlaceholder.mock.calls.filter(
+        ([calendar]: [CalendarRef, HoldPlaceholder]) => calendar.type === 'hub',
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps every own hold placeholder whose key is desired on the pull side', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent('own-hold-a', HOLD_TAG, START, END, false, false),
+        new CalendarEvent('own-hold-b', HOLD_TAG, START, END, false, false),
+      ],
+      hub: [
+        new CalendarEvent(
+          'hub-external',
+          'External Sync',
+          START,
+          END,
+          false,
+          false,
+        ),
+      ],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
+    expect(calendarPort.createHoldPlaceholder.mock.calls).toEqual([]);
+  });
+
+  it('deletes every own hold placeholder whose key is no longer desired on the pull side', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent('own-hold-a', HOLD_TAG, START, END, false, false),
+        new CalendarEvent('own-hold-b', HOLD_TAG, START, END, false, false),
+      ],
+      hub: [],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent.mock.calls).toEqual([
+      [own, 'own-hold-a'],
+      [own, 'own-hold-b'],
+    ]);
+  });
+
+  it('deletes every copy of a stale hub placeholder whose key is no longer desired', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [],
+      hub: [
+        new CalendarEvent(
+          'hub-placeholder-a',
+          `${HOLD_TAG} ${OWN_DOMAIN} Gone`,
+          START,
+          END,
+          false,
+          false,
+        ),
+        new CalendarEvent(
+          'hub-placeholder-b',
+          `${HOLD_TAG} ${OWN_DOMAIN} Gone`,
+          START,
+          END,
+          false,
+          false,
+        ),
+      ],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent.mock.calls).toEqual([
+      [hub, 'hub-placeholder-a'],
+      [hub, 'hub-placeholder-b'],
+    ]);
+  });
+});
