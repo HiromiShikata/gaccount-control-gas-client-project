@@ -368,3 +368,90 @@ describe('HoldPlaceholderReconciliation', () => {
     });
   });
 });
+
+describe('HoldPlaceholderReconciliation.separateDuplicateExistingPlaceholders', () => {
+  const T1 = new Date('2020-01-01T09:00:00Z');
+  const T2 = new Date('2020-01-01T10:00:00Z');
+  const placeholder = (id: string, title: string, startAt: Date) =>
+    new ExistingHoldPlaceholder(id, title, startAt, END);
+
+  it('keeps the smallest id per dedup key and reports the rest as duplicates', () => {
+    const cases: {
+      name: string;
+      existing: ExistingHoldPlaceholder[];
+      keptIds: string[];
+      duplicateIds: string[];
+    }[] = [
+      { name: 'no placeholders', existing: [], keptIds: [], duplicateIds: [] },
+      {
+        name: 'a single placeholder',
+        existing: [placeholder('a', HOLD_TAG, T1)],
+        keptIds: ['a'],
+        duplicateIds: [],
+      },
+      {
+        name: 'two copies of one key, larger id first',
+        existing: [
+          placeholder('b', HOLD_TAG, T1),
+          placeholder('a', HOLD_TAG, T1),
+        ],
+        keptIds: ['a'],
+        duplicateIds: ['b'],
+      },
+      {
+        name: 'three copies of one key in arbitrary order',
+        existing: [
+          placeholder('c', HOLD_TAG, T1),
+          placeholder('a', HOLD_TAG, T1),
+          placeholder('b', HOLD_TAG, T1),
+        ],
+        keptIds: ['a'],
+        duplicateIds: ['b', 'c'],
+      },
+      {
+        name: 'distinct start times are distinct keys',
+        existing: [
+          placeholder('a', HOLD_TAG, T1),
+          placeholder('b', HOLD_TAG, T2),
+        ],
+        keptIds: ['a', 'b'],
+        duplicateIds: [],
+      },
+      {
+        name: 'distinct titles are distinct keys',
+        existing: [
+          placeholder('a', HOLD_TAG, T1),
+          placeholder('b', `${HOLD_TAG} ${OWN_DOMAIN} Standup`, T1),
+        ],
+        keptIds: ['a', 'b'],
+        duplicateIds: [],
+      },
+      {
+        name: 'duplicates of two keys are resolved per key',
+        existing: [
+          placeholder('d', HOLD_TAG, T2),
+          placeholder('a', HOLD_TAG, T1),
+          placeholder('c', HOLD_TAG, T2),
+          placeholder('b', HOLD_TAG, T1),
+        ],
+        keptIds: ['a', 'c'],
+        duplicateIds: ['b', 'd'],
+      },
+    ];
+    for (const testCase of cases) {
+      const result =
+        HoldPlaceholderReconciliation.separateDuplicateExistingPlaceholders(
+          testCase.existing,
+        );
+      expect({
+        name: testCase.name,
+        keptIds: result.kept.map((p) => p.id).sort(),
+        duplicateIds: result.duplicates.map((p) => p.id).sort(),
+      }).toEqual({
+        name: testCase.name,
+        keptIds: testCase.keptIds,
+        duplicateIds: testCase.duplicateIds,
+      });
+    }
+  });
+});
