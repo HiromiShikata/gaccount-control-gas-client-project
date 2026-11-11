@@ -113,6 +113,34 @@ export class HoldPlaceholderReconciliation {
     return { toCreate, toDelete };
   }
 
+  static separateDuplicateExistingPlaceholders(
+    existing: ExistingHoldPlaceholder[],
+  ): {
+    kept: ExistingHoldPlaceholder[];
+    duplicates: ExistingHoldPlaceholder[];
+  } {
+    const groups = new Map<string, ExistingHoldPlaceholder[]>();
+    for (const placeholder of existing) {
+      const key = placeholder.dedupKey();
+      const group = groups.get(key);
+      if (group === undefined) {
+        groups.set(key, [placeholder]);
+      } else {
+        group.push(placeholder);
+      }
+    }
+    const kept: ExistingHoldPlaceholder[] = [];
+    const duplicates: ExistingHoldPlaceholder[] = [];
+    for (const group of groups.values()) {
+      const sorted = [...group].sort((a, b) =>
+        a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+      );
+      kept.push(sorted[0]);
+      duplicates.push(...sorted.slice(1));
+    }
+    return { kept, duplicates };
+  }
+
   private static deduplicate(
     placeholders: HoldPlaceholder[],
   ): HoldPlaceholder[] {

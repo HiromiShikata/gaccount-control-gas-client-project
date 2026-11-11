@@ -60,16 +60,20 @@ export class CalendarHoldMirrorSyncUseCase {
         hubEvents,
         ownDomain,
       );
-    const existing =
+    const existingAll =
       HoldPlaceholderReconciliation.selectPushExistingPlaceholders(
         hubEvents,
         ownDomain,
       );
+    const { kept, duplicates } =
+      HoldPlaceholderReconciliation.separateDuplicateExistingPlaceholders(
+        existingAll,
+      );
     const { toCreate, toDelete } = HoldPlaceholderReconciliation.reconcile(
       desired,
-      existing,
+      kept,
     );
-    for (const placeholder of toDelete) {
+    for (const placeholder of [...toDelete, ...duplicates]) {
       this.calendarPort.deleteEvent(hub, placeholder.id);
     }
     for (const placeholder of toCreate) {
