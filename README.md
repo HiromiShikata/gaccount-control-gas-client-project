@@ -13,7 +13,11 @@ now + `SYNC_DAYS` days:
 
 - Push: for each of the account's own timed events, skipping all-day events,
   events already tagged `[HOLD]`, and declined events, a placeholder titled
-  `[HOLD] {ownDomain} {originalTitle}` is reconciled onto the hub calendar.
+  exactly `[HOLD] {ownDomain}` is reconciled onto the hub calendar. The title
+  carries no event title or other event detail, so events with the same start
+  and end collapse to one placeholder. Placeholders in the legacy format
+  `[HOLD] {ownDomain} {originalTitle}` are removed by the next run, and the
+  new-format placeholder is created in their place.
   Placeholders have their reminders removed and are marked busy (opaque).
 - Pull: for each hub timed event, skipping all-day events, this domain's own
   holds, and declined events, a `[HOLD]` placeholder is reconciled onto the
