@@ -127,7 +127,7 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
         [
           hub,
           new HoldPlaceholder(
-            `${HOLD_TAG} ${OWN_DOMAIN} Standup`,
+            `${HOLD_TAG} ${OWN_DOMAIN}`,
             standupStart,
             standupEnd,
           ),
@@ -273,7 +273,7 @@ describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
       hub: [
         new CalendarEvent(
           'hub-placeholder-b',
-          `${HOLD_TAG} ${OWN_DOMAIN} Standup`,
+          `${HOLD_TAG} ${OWN_DOMAIN}`,
           START,
           END,
           false,
@@ -281,7 +281,7 @@ describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
         ),
         new CalendarEvent(
           'hub-placeholder-a',
-          `${HOLD_TAG} ${OWN_DOMAIN} Standup`,
+          `${HOLD_TAG} ${OWN_DOMAIN}`,
           START,
           END,
           false,

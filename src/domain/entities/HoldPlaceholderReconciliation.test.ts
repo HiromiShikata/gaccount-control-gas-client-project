@@ -36,7 +36,7 @@ const END = new Date('2020-01-01T09:30:00Z');
 
 describe('HoldPlaceholderReconciliation', () => {
   describe('computePushDesiredPlaceholders', () => {
-    it('maps own timed events to hub placeholders titled with domain and original title', () => {
+    it('maps own timed events to hub placeholders titled with the hold tag and domain only', () => {
       const desired =
         HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
           [timedEvent('a', 'Standup', START, END)],
@@ -44,8 +44,34 @@ describe('HoldPlaceholderReconciliation', () => {
           OWN_DOMAIN,
         );
       expect(desired).toEqual([
-        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
       ]);
+    });
+
+    it('never carries the source event title into the hub placeholder title', () => {
+      const cases = [
+        { name: 'a plain title', sourceTitle: 'Standup' },
+        {
+          name: 'a title containing spaces',
+          sourceTitle: 'Weekly scrum planning',
+        },
+        { name: 'a title containing #', sourceTitle: 'Client #42 review' },
+      ];
+      for (const testCase of cases) {
+        const desired =
+          HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
+            [timedEvent('a', testCase.sourceTitle, START, END)],
+            [],
+            OWN_DOMAIN,
+          );
+        expect({
+          name: testCase.name,
+          titles: desired.map((placeholder) => placeholder.title),
+        }).toEqual({
+          name: testCase.name,
+          titles: [`${HOLD_TAG} ${OWN_DOMAIN}`],
+        });
+      }
     });
 
     it('skips all-day events', () => {
@@ -89,7 +115,22 @@ describe('HoldPlaceholderReconciliation', () => {
           OWN_DOMAIN,
         );
       expect(desired).toEqual([
-        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+      ]);
+    });
+
+    it('collapses own events with different titles at the same start and end into one placeholder', () => {
+      const desired =
+        HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
+          [
+            timedEvent('a', 'Standup', START, END),
+            timedEvent('b', 'Weekly scrum planning', START, END),
+          ],
+          [],
+          OWN_DOMAIN,
+        );
+      expect(desired).toEqual([
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
       ]);
     });
 
@@ -118,7 +159,7 @@ describe('HoldPlaceholderReconciliation', () => {
           OWN_DOMAIN,
         );
       expect(desired).toEqual([
-        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
       ]);
     });
 
@@ -130,7 +171,7 @@ describe('HoldPlaceholderReconciliation', () => {
           OWN_DOMAIN,
         );
       expect(desired).toEqual([
-        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
       ]);
     });
 
@@ -142,7 +183,7 @@ describe('HoldPlaceholderReconciliation', () => {
           OWN_DOMAIN,
         );
       expect(desired).toEqual([
-        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+        new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
       ]);
     });
   });
@@ -186,7 +227,7 @@ describe('HoldPlaceholderReconciliation', () => {
     it('skips this domain own holds already present on the hub', () => {
       const desired =
         HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
-          [timedEvent('a', `${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END)],
+          [timedEvent('a', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END)],
           OWN_DOMAIN,
           MEETING_OK_TAG,
           MEETING_OK_TITLE,
@@ -280,7 +321,7 @@ describe('HoldPlaceholderReconciliation', () => {
       const existing =
         HoldPlaceholderReconciliation.selectPushExistingPlaceholders(
           [
-            timedEvent('a', `${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+            timedEvent('a', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
             timedEvent('b', `${HOLD_TAG} other.com Standup`, START, END),
             timedEvent('c', 'External Sync', START, END),
           ],
@@ -289,7 +330,32 @@ describe('HoldPlaceholderReconciliation', () => {
       expect(existing).toEqual([
         new ExistingHoldPlaceholder(
           'a',
+          `${HOLD_TAG} ${OWN_DOMAIN}`,
+          START,
+          END,
+        ),
+      ]);
+    });
+
+    it('also selects legacy own-domain placeholders so they can be migrated', () => {
+      const existing =
+        HoldPlaceholderReconciliation.selectPushExistingPlaceholders(
+          [
+            timedEvent('a', `${HOLD_TAG} ${OWN_DOMAIN} Standup`, START, END),
+            timedEvent('b', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+          ],
+          OWN_DOMAIN,
+        );
+      expect(existing).toEqual([
+        new ExistingHoldPlaceholder(
+          'a',
           `${HOLD_TAG} ${OWN_DOMAIN} Standup`,
+          START,
+          END,
+        ),
+        new ExistingHoldPlaceholder(
+          'b',
+          `${HOLD_TAG} ${OWN_DOMAIN}`,
           START,
           END,
         ),
