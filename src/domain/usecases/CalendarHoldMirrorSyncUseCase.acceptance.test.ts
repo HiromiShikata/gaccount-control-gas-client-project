@@ -26,6 +26,8 @@ const CONFIG: Record<string, string> = {
 const placeholderTitle = (domain: string, sourceTitle: string): string =>
   `${HOLD_TAG} ${domain} ${sourceTitle}`;
 
+const holdTitle = (domain: string): string => `${HOLD_TAG} ${domain}`;
+
 const hubPlaceholder = (
   id: string,
   domain: string,
@@ -39,6 +41,9 @@ const hubPlaceholder = (
     false,
     false,
   );
+
+const hubPlaceholderTitled = (id: string, title: string): CalendarEvent =>
+  new CalendarEvent(id, title, SLOT_START, SLOT_END, false, false);
 
 const ownSourceEvent = (id: string, title: string = SOURCE_TITLE) =>
   new CalendarEvent(id, title, SLOT_START, SLOT_END, false, false);
@@ -143,8 +148,8 @@ describe('CalendarHoldMirrorSyncUseCase acceptance', () => {
         name: 'keeps the single copy with the smallest id and deletes the rest',
         ownEvents: [ownSourceEvent('own-standup')],
         hubEvents: [
-          hubPlaceholder('evt-2', OWN_DOMAIN),
-          hubPlaceholder('evt-1', OWN_DOMAIN),
+          hubPlaceholderTitled('evt-2', holdTitle(OWN_DOMAIN)),
+          hubPlaceholderTitled('evt-1', holdTitle(OWN_DOMAIN)),
         ],
         expectedHubDeletedIds: ['evt-2'],
         expectedHubCreatedTitles: [],
@@ -153,9 +158,9 @@ describe('CalendarHoldMirrorSyncUseCase acceptance', () => {
         name: 'keeps the smallest string id among three copies regardless of listing position',
         ownEvents: [ownSourceEvent('own-standup')],
         hubEvents: [
-          hubPlaceholder('evt-3', OWN_DOMAIN),
-          hubPlaceholder('evt-1', OWN_DOMAIN),
-          hubPlaceholder('evt-2', OWN_DOMAIN),
+          hubPlaceholderTitled('evt-3', holdTitle(OWN_DOMAIN)),
+          hubPlaceholderTitled('evt-1', holdTitle(OWN_DOMAIN)),
+          hubPlaceholderTitled('evt-2', holdTitle(OWN_DOMAIN)),
         ],
         expectedHubDeletedIds: ['evt-2', 'evt-3'],
         expectedHubCreatedTitles: [],
@@ -197,7 +202,9 @@ describe('CalendarHoldMirrorSyncUseCase acceptance', () => {
         order,
       })),
     )('$name', ({ order }) => {
-      const hubEvents = order.map((id) => hubPlaceholder(id, OWN_DOMAIN));
+      const hubEvents = order.map((id) =>
+        hubPlaceholderTitled(id, holdTitle(OWN_DOMAIN)),
+      );
       const { calendarPort } = runSync({
         own: [ownSourceEvent('own-standup')],
         hub: hubEvents,
@@ -265,8 +272,8 @@ describe('CalendarHoldMirrorSyncUseCase acceptance', () => {
         name: 'deletes only this account duplicates and leaves duplicated placeholders of another account',
         ownEvents: [ownSourceEvent('own-standup')],
         hubEvents: [
-          hubPlaceholder('evt-1', OWN_DOMAIN),
-          hubPlaceholder('evt-2', OWN_DOMAIN),
+          hubPlaceholderTitled('evt-1', holdTitle(OWN_DOMAIN)),
+          hubPlaceholderTitled('evt-2', holdTitle(OWN_DOMAIN)),
           hubPlaceholder('other-1', OTHER_DOMAIN),
           hubPlaceholder('other-2', OTHER_DOMAIN),
         ],
@@ -316,6 +323,142 @@ describe('CalendarHoldMirrorSyncUseCase acceptance', () => {
         ownDeletedIds: [],
         ownCreatedTitles: [],
       });
+    });
+  });
+
+  describe('title privacy of new-format placeholders', () => {
+    it('collapses two own events with different titles at the same time into one hub placeholder titled with the hold tag and domain', () => {
+      const { calendarPort } = runSync({
+        own: [
+          ownSourceEvent('own-standup', 'Standup'),
+          ownSourceEvent('own-review', 'Weekly scrum planning'),
+        ],
+        hub: [],
+      });
+
+      expect(calendarPort.createdTitlesOn('hub')).toEqual([
+        holdTitle(OWN_DOMAIN),
+      ]);
+    });
+
+    it('creates and deletes nothing for a hub placeholder already titled with the hold tag and domain at the same time range', () => {
+      const { calendarPort } = runSync({
+        own: [ownSourceEvent('own-standup')],
+        hub: [hubPlaceholderTitled('evt-1', holdTitle(OWN_DOMAIN))],
+      });
+
+      expect({
+        hubDeletedIds: calendarPort.deletedIdsOn('hub'),
+        hubCreatedTitles: calendarPort.createdTitlesOn('hub'),
+        ownDeletedIds: calendarPort.deletedIdsOn('own'),
+        ownCreatedTitles: calendarPort.createdTitlesOn('own'),
+      }).toEqual({
+        hubDeletedIds: [],
+        hubCreatedTitles: [],
+        ownDeletedIds: [],
+        ownCreatedTitles: [],
+      });
+    });
+  });
+
+  describe('migration of legacy placeholders whose source event still exists', () => {
+    it.each([
+      {
+        name: 'replaces a legacy placeholder whose source title is a plain word',
+        sourceTitle: 'Standup',
+      },
+      {
+        name: 'replaces a legacy placeholder whose source title contains spaces',
+        sourceTitle: 'Weekly scrum planning',
+      },
+      {
+        name: 'replaces a legacy placeholder whose source title contains #',
+        sourceTitle: 'Client #42 review',
+      },
+    ])('$name', ({ sourceTitle }) => {
+      const { calendarPort } = runSync({
+        own: [ownSourceEvent('own-meeting', sourceTitle)],
+        hub: [hubPlaceholder('legacy-1', OWN_DOMAIN, sourceTitle)],
+      });
+
+      expect({
+        hubDeletedIds: calendarPort.deletedIdsOn('hub'),
+        hubCreatedTitles: calendarPort.createdTitlesOn('hub'),
+      }).toEqual({
+        hubDeletedIds: ['legacy-1'],
+        hubCreatedTitles: [holdTitle(OWN_DOMAIN)],
+      });
+    });
+  });
+
+  describe('migration of orphan legacy placeholders', () => {
+    it('deletes a legacy placeholder whose source event no longer exists by id and creates nothing for it', () => {
+      const { calendarPort } = runSync({
+        own: [],
+        hub: [hubPlaceholder('legacy-gone', OWN_DOMAIN, 'Gone')],
+      });
+
+      expect({
+        hubDeletedIds: calendarPort.deletedIdsOn('hub'),
+        hubCreatedTitles: calendarPort.createdTitlesOn('hub'),
+      }).toEqual({
+        hubDeletedIds: ['legacy-gone'],
+        hubCreatedTitles: [],
+      });
+    });
+  });
+
+  describe('legacy duplicates with different titles at the same time range', () => {
+    it.each([
+      {
+        name: 'two legacy titles where the own event matches the first',
+        ownTitle: 'Standup',
+        legacyTitles: ['Standup', 'Weekly scrum planning'],
+      },
+      {
+        name: 'two legacy titles where the own event matches the second',
+        ownTitle: 'Lunch',
+        legacyTitles: ['Client #42 review', 'Lunch'],
+      },
+    ])('$name', ({ ownTitle, legacyTitles }) => {
+      const { calendarPort } = runSync({
+        own: [ownSourceEvent('own-meeting', ownTitle)],
+        hub: legacyTitles.map((sourceTitle, index) =>
+          hubPlaceholder(`legacy-${index + 1}`, OWN_DOMAIN, sourceTitle),
+        ),
+      });
+
+      expect({
+        hubDeletedIds: calendarPort.deletedIdsOn('hub'),
+        hubCreatedTitles: calendarPort.createdTitlesOn('hub'),
+      }).toEqual({
+        hubDeletedIds: legacyTitles.map((_, index) => `legacy-${index + 1}`),
+        hubCreatedTitles: [holdTitle(OWN_DOMAIN)],
+      });
+    });
+  });
+
+  describe('pull direction for new-format and other-domain holds', () => {
+    it.each([
+      {
+        name: 'does not mirror the own domain new-format placeholder back to the own calendar',
+        hubTitle: holdTitle(OWN_DOMAIN),
+        expectedOwnCreatedTitles: [],
+      },
+      {
+        name: 'mirrors another domain hold as a plain hold',
+        hubTitle: `${HOLD_TAG} other.com Standup`,
+        expectedOwnCreatedTitles: [HOLD_TAG],
+      },
+    ])('$name', ({ hubTitle, expectedOwnCreatedTitles }) => {
+      const { calendarPort } = runSync({
+        own: [],
+        hub: [hubPlaceholderTitled('hub-hold', hubTitle)],
+      });
+
+      expect(calendarPort.createdTitlesOn('own')).toEqual(
+        expectedOwnCreatedTitles,
+      );
     });
   });
 });

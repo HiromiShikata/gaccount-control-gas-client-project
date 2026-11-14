@@ -30,7 +30,7 @@ export class HoldPlaceholderReconciliation {
       .map(
         (event) =>
           new HoldPlaceholder(
-            `${HOLD_TAG} ${ownDomain} ${event.title}`,
+            `${HOLD_TAG} ${ownDomain}`,
             event.startAt,
             event.endAt,
           ),
