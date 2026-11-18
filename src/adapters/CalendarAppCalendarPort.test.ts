@@ -178,13 +178,13 @@ describe('CalendarAppCalendarPort', () => {
 
       const events = port.listTimedEvents(makeOwnCalendarRef(), from, to);
 
-      expect(events.map((event) => [event.id, event.hasRemindersRemoved])).toEqual(
-        [
-          ['ev-marked', true],
-          ['ev-unmarked', false],
-          ['ev-empty', false],
-        ],
-      );
+      expect(
+        events.map((event) => [event.id, event.hasRemindersRemoved]),
+      ).toEqual([
+        ['ev-marked', true],
+        ['ev-unmarked', false],
+        ['ev-empty', false],
+      ]);
     });
   });
 
@@ -252,6 +252,7 @@ describe('CalendarAppCalendarPort', () => {
         })),
         isAllDayEvent: jest.fn(() => false),
         getMyStatus: jest.fn(() => ''),
+        getDescription: jest.fn(() => ''),
         deleteEvent: jest.fn(),
       } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
       const getEvents = jest.fn(() => [gasEvent]);
@@ -449,6 +450,7 @@ describe('CalendarAppCalendarPort', () => {
         })),
         isAllDayEvent: jest.fn(() => false),
         getMyStatus: jest.fn(() => ''),
+        getDescription: jest.fn(() => ''),
         setColor: jest.fn(),
       } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
       const getEvents = jest.fn(() => [gasEvent]);

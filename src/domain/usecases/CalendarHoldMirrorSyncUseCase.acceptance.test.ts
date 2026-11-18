@@ -50,6 +50,7 @@ const ownSourceEvent = (id: string, title: string = SOURCE_TITLE) =>
 
 class InMemoryCalendarPort implements CalendarPort {
   readonly deletions: { calendar: CalendarRef; eventId: string }[] = [];
+  readonly reminderRemovals: { calendar: CalendarRef; eventId: string }[] = [];
   readonly creations: {
     calendar: CalendarRef;
     placeholder: HoldPlaceholder;
@@ -83,6 +84,10 @@ class InMemoryCalendarPort implements CalendarPort {
 
   deleteEvent(calendar: CalendarRef, eventId: string): void {
     this.deletions.push({ calendar, eventId });
+  }
+
+  removeHoldPlaceholderReminders(calendar: CalendarRef, eventId: string): void {
+    this.reminderRemovals.push({ calendar, eventId });
   }
 
   setEventColor(

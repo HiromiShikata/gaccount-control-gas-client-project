@@ -6,5 +6,6 @@ export class CalendarEvent {
     readonly endAt: Date,
     readonly isAllDay: boolean,
     readonly isDeclined: boolean,
+    readonly hasRemindersRemoved: boolean = false,
   ) {}
 }

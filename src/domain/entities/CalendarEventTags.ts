@@ -3,4 +3,5 @@ export const PREP_TAG = '(PREP)';
 export const SUMMARY_TAG = '[SUMMARY]';
 export const LEGACY_PREP_TAG = '[PREP]';
 export const LEGACY_SUMMARY_TAG = '(SUMMARY)';
-export const REMINDERS_REMOVED_MARKER = '[calendar-hold-mirror] reminders removed';
+export const REMINDERS_REMOVED_MARKER =
+  '[calendar-hold-mirror] reminders removed';

@@ -8,6 +8,7 @@ import { ScriptPropertiesConfigWritePort } from './adapters/ScriptPropertiesConf
 import { SyncConfiguration } from './domain/entities/SyncConfiguration';
 import { CalendarEventColorSyncUseCase } from './domain/usecases/CalendarEventColorSyncUseCase';
 import { CalendarHoldMirrorSyncUseCase } from './domain/usecases/CalendarHoldMirrorSyncUseCase';
+import { CalendarSyncRunUseCase } from './domain/usecases/CalendarSyncRunUseCase';
 import { ClientProjectSetupUseCase } from './domain/usecases/ClientProjectSetupUseCase';
 import { SyncRunUseCase } from './domain/usecases/SyncRunUseCase';
 
@@ -30,16 +31,10 @@ function sync(): void {
       PropertiesService.getScriptProperties(),
     );
     const ownDomain = Session.getActiveUser().getEmail().split('@')[1];
-    new CalendarHoldMirrorSyncUseCase(
-      calendarPort,
-      configPort,
-      logPort,
+    new CalendarSyncRunUseCase(
+      new CalendarHoldMirrorSyncUseCase(calendarPort, configPort, logPort),
+      new CalendarEventColorSyncUseCase(calendarPort, configPort, logPort),
     ).execute(now, ownDomain);
-    new CalendarEventColorSyncUseCase(
-      calendarPort,
-      configPort,
-      logPort,
-    ).execute(now);
   });
 }
 

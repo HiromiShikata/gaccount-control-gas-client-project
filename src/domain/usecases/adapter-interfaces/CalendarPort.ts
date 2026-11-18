@@ -11,6 +11,7 @@ export interface CalendarPort {
     placeholder: HoldPlaceholder,
   ): void;
   deleteEvent(calendar: CalendarRef, eventId: string): void;
+  removeHoldPlaceholderReminders(calendar: CalendarRef, eventId: string): void;
   setEventColor(
     calendar: CalendarRef,
     eventId: string,

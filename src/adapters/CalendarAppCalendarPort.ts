@@ -2,6 +2,7 @@ import { CalendarEvent } from '../domain/entities/CalendarEvent';
 import { CalendarEventColor } from '../domain/entities/CalendarEventColor';
 import { CalendarRef } from '../domain/entities/CalendarRef';
 import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
+import { REMINDERS_REMOVED_MARKER } from '../domain/entities/CalendarEventTags';
 import { CalendarPort } from '../domain/usecases/adapter-interfaces/CalendarPort';
 
 export class CalendarAppCalendarPort implements CalendarPort {
@@ -43,6 +44,7 @@ export class CalendarAppCalendarPort implements CalendarPort {
         new Date(event.getEndTime().getTime()),
         event.isAllDayEvent(),
         event.getMyStatus() === CalendarApp.GuestStatus.NO,
+        event.getDescription().includes(REMINDERS_REMOVED_MARKER),
       );
     });
     this.listTimedEventsCache.set(key, events);
@@ -53,32 +55,25 @@ export class CalendarAppCalendarPort implements CalendarPort {
     calendar: CalendarRef,
     placeholder: HoldPlaceholder,
   ): void {
-    try {
-      const event = this.resolve(calendar).createEvent(
-        placeholder.title,
-        placeholder.startAt,
-        placeholder.endAt,
-      );
-      event.removeAllReminders();
-    } catch (error) {
-      console.error(
-        `Failed to create hold placeholder ${placeholder.title}: ${String(error)}`,
-      );
-    }
+    const event = this.resolve(calendar).createEvent(
+      placeholder.title,
+      placeholder.startAt,
+      placeholder.endAt,
+    );
+    event.removeAllReminders();
+    event.setDescription(REMINDERS_REMOVED_MARKER);
+  }
+
+  removeHoldPlaceholderReminders(calendar: CalendarRef, eventId: string): void {
+    const event = this.findEvent(calendar, eventId);
+    event.removeAllReminders();
+    event.setDescription(withReminderMarker(event.getDescription()));
   }
 
   deleteEvent(calendar: CalendarRef, eventId: string): void {
-    const cachedEvent = this.gasEventCache.get(eventId);
-    const event =
-      cachedEvent !== undefined
-        ? cachedEvent
-        : this.resolve(calendar).getEventById(eventId);
+    const event = this.findEventIfExists(calendar, eventId);
     if (event !== null) {
-      try {
-        event.deleteEvent();
-      } catch (error) {
-        console.error(`Failed to delete event ${eventId}: ${String(error)}`);
-      }
+      event.deleteEvent();
     }
   }
 
@@ -105,6 +100,27 @@ export class CalendarAppCalendarPort implements CalendarPort {
     }
   }
 
+  private findEvent(
+    calendar: CalendarRef,
+    eventId: string,
+  ): GoogleAppsScript.Calendar.CalendarEvent {
+    const event = this.findEventIfExists(calendar, eventId);
+    if (event === null) {
+      throw new Error(`Calendar event is not found: ${eventId}`);
+    }
+    return event;
+  }
+
+  private findEventIfExists(
+    calendar: CalendarRef,
+    eventId: string,
+  ): GoogleAppsScript.Calendar.CalendarEvent | null {
+    const cachedEvent = this.gasEventCache.get(eventId);
+    return cachedEvent !== undefined
+      ? cachedEvent
+      : this.resolve(calendar).getEventById(eventId);
+  }
+
   private resolve(calendar: CalendarRef): GoogleAppsScript.Calendar.Calendar {
     const key = calendar.type === 'own' ? 'own' : calendar.hubCalendarId;
     const cached = this.calendarCache.get(key);
@@ -127,3 +143,12 @@ export class CalendarAppCalendarPort implements CalendarPort {
     return resolved;
   }
 }
+
+const withReminderMarker = (description: string): string => {
+  if (description.includes(REMINDERS_REMOVED_MARKER)) {
+    return description;
+  }
+  return description === ''
+    ? REMINDERS_REMOVED_MARKER
+    : `${description}\n${REMINDERS_REMOVED_MARKER}`;
+};

@@ -19,6 +19,14 @@ now + `SYNC_DAYS` days:
   `[HOLD] {ownDomain} {originalTitle}` are removed by the next run, and the
   new-format placeholder is created in their place.
   Placeholders have their reminders removed and are marked busy (opaque).
+  Removal is recorded by appending the marker line
+  `[calendar-hold-mirror] reminders removed` to the placeholder's description.
+  A placeholder without that marker, including one created by an earlier run,
+  has its reminders removed on the next run and is then marked; a placeholder
+  with the marker is not written again. The marker is used instead of reading
+  the reminders back, because the Apps Script reference for `CalendarEvent`
+  does not state whether its reminder getters report reminders inherited from
+  the calendar's defaults.
 - Pull: for each hub timed event, skipping all-day events, this domain's own
   holds, and declined events, a `[HOLD]` placeholder is reconciled onto the
   account's own calendar. When the hub event title contains the configured
@@ -29,6 +37,11 @@ Reconciliation deletes stale placeholders and creates missing ones; the
 deduplication key is start time, end time, and title. On the hub, when several
 placeholders of this account share one key, the copy with the smallest event id
 is kept and every other copy is deleted, whether or not the key is still desired.
+
+A reminder removal or any other create or delete that fails is collected rather
+than skipped silently: the remaining operations still run, and the run ends by
+throwing an error that names every failed item, so the Apps Script execution is
+recorded as failed.
 
 Each run holds the Apps Script script lock for its whole duration. A run that
 cannot acquire the lock within one second logs a message and skips; the next

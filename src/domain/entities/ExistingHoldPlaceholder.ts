@@ -6,6 +6,7 @@ export class ExistingHoldPlaceholder {
     readonly title: string,
     readonly startAt: Date,
     readonly endAt: Date,
+    readonly hasRemindersRemoved: boolean = false,
   ) {}
 
   dedupKey(): string {
