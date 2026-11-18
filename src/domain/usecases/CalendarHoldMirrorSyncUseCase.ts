@@ -11,13 +11,27 @@ import { CalendarSyncFailureCollector } from './CalendarSyncFailureCollector';
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * Upper bound on reminder removals per run. Each removal is two calendar
+ * writes, and a run already takes up to about 1215 s against a 1800 s Apps
+ * Script limit, so a first run after deploy must not add an unbounded number
+ * of writes. Earliest-starting placeholders go first; the rest wait for later
+ * runs, which see them still unmarked.
+ */
 export const MAX_REMINDER_REPAIRS_PER_RUN = 50;
+
+interface ReminderRepair {
+  readonly calendar: CalendarRef;
+  readonly calendarLabel: string;
+  readonly placeholder: ExistingHoldPlaceholder;
+}
 
 export class CalendarHoldMirrorSyncUseCase {
   constructor(
     readonly calendarPort: CalendarPort,
     readonly configPort: ConfigPort,
     readonly logPort: LogPort,
+    readonly maxReminderRepairsPerRun: number = MAX_REMINDER_REPAIRS_PER_RUN,
   ) {}
 
   execute(now: Date, ownDomain: string): void {
@@ -50,7 +64,8 @@ export class CalendarHoldMirrorSyncUseCase {
     const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
     const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
     const failures = new CalendarSyncFailureCollector();
-    this.pushToHub(hub, ownEvents, hubEvents, ownDomain, failures);
+    const repairs: ReminderRepair[] = [];
+    this.pushToHub(hub, ownEvents, hubEvents, ownDomain, failures, repairs);
     this.pullFromHub(
       own,
       ownEvents,
@@ -58,7 +73,9 @@ export class CalendarHoldMirrorSyncUseCase {
       ownDomain,
       configuration,
       failures,
+      repairs,
     );
+    this.repairReminders(repairs, failures);
     failures.throwIfAny();
   }
 
@@ -68,6 +85,7 @@ export class CalendarHoldMirrorSyncUseCase {
     hubEvents: CalendarEvent[],
     ownDomain: string,
     failures: CalendarSyncFailureCollector,
+    repairs: ReminderRepair[],
   ): void {
     const desired =
       HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
@@ -88,12 +106,15 @@ export class CalendarHoldMirrorSyncUseCase {
       desired,
       kept,
     );
-    const deleted = [...toDelete, ...duplicates];
-    for (const placeholder of deleted) {
-      failures.attempt(
+    const deletedIds = new Set<string>();
+    for (const placeholder of [...toDelete, ...duplicates]) {
+      const deleted = failures.attempt(
         `delete hub placeholder event ${placeholder.id}${this.describeWindow(placeholder)}`,
         () => this.calendarPort.deleteEvent(hub, placeholder.id),
       );
+      if (deleted) {
+        deletedIds.add(placeholder.id);
+      }
     }
     for (const placeholder of toCreate) {
       failures.attempt(
@@ -101,7 +122,13 @@ export class CalendarHoldMirrorSyncUseCase {
         () => this.calendarPort.createHoldPlaceholder(hub, placeholder),
       );
     }
-    this.repairReminders(hub, 'hub', kept, toDelete, failures);
+    this.collectRepairs(
+      hub,
+      'hub',
+      [...kept, ...duplicates],
+      deletedIds,
+      repairs,
+    );
   }
 
   private pullFromHub(
@@ -111,6 +138,7 @@ export class CalendarHoldMirrorSyncUseCase {
     ownDomain: string,
     configuration: SyncConfiguration,
     failures: CalendarSyncFailureCollector,
+    repairs: ReminderRepair[],
   ): void {
     const desired =
       HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
@@ -125,11 +153,15 @@ export class CalendarHoldMirrorSyncUseCase {
       desired,
       existing,
     );
+    const deletedIds = new Set<string>();
     for (const placeholder of toDelete) {
-      failures.attempt(
+      const deleted = failures.attempt(
         `delete own placeholder event ${placeholder.id}${this.describeWindow(placeholder)}`,
         () => this.calendarPort.deleteEvent(own, placeholder.id),
       );
+      if (deleted) {
+        deletedIds.add(placeholder.id);
+      }
     }
     for (const placeholder of toCreate) {
       failures.attempt(
@@ -137,20 +169,37 @@ export class CalendarHoldMirrorSyncUseCase {
         () => this.calendarPort.createHoldPlaceholder(own, placeholder),
       );
     }
-    this.repairReminders(own, 'own', existing, toDelete, failures);
+    this.collectRepairs(own, 'own', existing, deletedIds, repairs);
   }
 
-  private repairReminders(
+  private collectRepairs(
     calendar: CalendarRef,
     calendarLabel: string,
     existing: ExistingHoldPlaceholder[],
-    deleted: ExistingHoldPlaceholder[],
-    failures: CalendarSyncFailureCollector,
+    deletedIds: Set<string>,
+    repairs: ReminderRepair[],
   ): void {
     for (const placeholder of existing) {
-      if (placeholder.hasRemindersRemoved || deleted.includes(placeholder)) {
+      if (deletedIds.has(placeholder.id)) {
         continue;
       }
+      repairs.push({ calendar, calendarLabel, placeholder });
+    }
+  }
+
+  private repairReminders(
+    repairs: ReminderRepair[],
+    failures: CalendarSyncFailureCollector,
+  ): void {
+    const candidates = repairs
+      .filter((repair) => !repair.placeholder.hasRemindersRemoved)
+      .sort(
+        (left, right) =>
+          left.placeholder.startAt.getTime() -
+          right.placeholder.startAt.getTime(),
+      )
+      .slice(0, this.maxReminderRepairsPerRun);
+    for (const { calendar, calendarLabel, placeholder } of candidates) {
       failures.attempt(
         `remove reminders from ${calendarLabel} placeholder event ${placeholder.id}${this.describeWindow(placeholder)}`,
         () =>

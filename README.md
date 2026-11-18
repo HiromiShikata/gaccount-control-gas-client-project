@@ -27,6 +27,14 @@ now + `SYNC_DAYS` days:
   the reminders back, because the Apps Script reference for `CalendarEvent`
   does not state whether its reminder getters report reminders inherited from
   the calendar's defaults.
+  A placeholder carrying the marker is not re-checked, so a reminder added to
+  it later (for example by hand) is not removed by the script.
+  Each run removes reminders from at most 50 placeholders, across the own and
+  hub calendars, taking the earliest start first. The rest are left for later
+  runs, which see them still unmarked. A placeholder whose delete failed is
+  still eligible, so its reminders are removed if it is still unmarked.
+  A placeholder created by a run whose reminder removal fails is deleted again
+  in the same call, so it is not left with its default reminders.
 - Pull: for each hub timed event, skipping all-day events, this domain's own
   holds, and declined events, a `[HOLD]` placeholder is reconciled onto the
   account's own calendar. When the hub event title contains the configured

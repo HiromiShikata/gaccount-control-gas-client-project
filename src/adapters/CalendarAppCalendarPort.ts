@@ -60,8 +60,27 @@ export class CalendarAppCalendarPort implements CalendarPort {
       placeholder.startAt,
       placeholder.endAt,
     );
-    event.removeAllReminders();
-    event.setDescription(REMINDERS_REMOVED_MARKER);
+    try {
+      event.removeAllReminders();
+      event.setDescription(REMINDERS_REMOVED_MARKER);
+    } catch (error) {
+      this.discardCreatedEvent(placeholder, event, error);
+    }
+  }
+
+  private discardCreatedEvent(
+    placeholder: HoldPlaceholder,
+    event: GoogleAppsScript.Calendar.CalendarEvent,
+    cause: unknown,
+  ): never {
+    try {
+      event.deleteEvent();
+    } catch (deleteError) {
+      throw new Error(
+        `Could not remove reminders from hold placeholder "${placeholder.title}" (${String(cause)}), and deleting the created event also failed (${String(deleteError)})`,
+      );
+    }
+    throw cause;
   }
 
   removeHoldPlaceholderReminders(calendar: CalendarRef, eventId: string): void {

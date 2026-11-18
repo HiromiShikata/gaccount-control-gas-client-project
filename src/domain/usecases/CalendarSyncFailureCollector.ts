@@ -1,11 +1,13 @@
 export class CalendarSyncFailureCollector {
   private readonly failures: string[] = [];
 
-  attempt(item: string, operation: () => void): void {
+  attempt(item: string, operation: () => void): boolean {
     try {
       operation();
+      return true;
     } catch (error) {
       this.failures.push(`${item}: ${this.describe(error)}`);
+      return false;
     }
   }
 
