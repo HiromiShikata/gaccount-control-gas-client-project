@@ -34,7 +34,9 @@ now + `SYNC_DAYS` days:
   runs, which see them still unmarked. A placeholder whose delete failed is
   still eligible, so its reminders are removed if it is still unmarked.
   A placeholder created by a run whose reminder removal fails is deleted again
-  in the same call, so it is not left with its default reminders.
+  in the same call, so it is not left with its default reminders. If that
+  cleanup delete also fails, the run fails with an error naming both failures,
+  and the placeholder stays unmarked, so a later run removes its reminders.
 - Pull: for each hub timed event, skipping all-day events, this domain's own
   holds, and declined events, a `[HOLD]` placeholder is reconciled onto the
   account's own calendar. When the hub event title contains the configured

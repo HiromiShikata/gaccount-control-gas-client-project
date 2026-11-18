@@ -2,7 +2,10 @@ import { CalendarEvent } from '../domain/entities/CalendarEvent';
 import { CalendarEventColor } from '../domain/entities/CalendarEventColor';
 import { CalendarRef } from '../domain/entities/CalendarRef';
 import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
-import { REMINDERS_REMOVED_MARKER } from '../domain/entities/CalendarEventTags';
+import {
+  HOLD_TAG,
+  REMINDERS_REMOVED_MARKER,
+} from '../domain/entities/CalendarEventTags';
 import { CalendarPort } from '../domain/usecases/adapter-interfaces/CalendarPort';
 
 export class CalendarAppCalendarPort implements CalendarPort {
@@ -37,14 +40,16 @@ export class CalendarAppCalendarPort implements CalendarPort {
     const gasEvents = this.resolve(calendar).getEvents(from, to);
     const events = gasEvents.map((event) => {
       this.gasEventCache.set(event.getId(), event);
+      const title = event.getTitle();
       return new CalendarEvent(
         event.getId(),
-        event.getTitle(),
+        title,
         new Date(event.getStartTime().getTime()),
         new Date(event.getEndTime().getTime()),
         event.isAllDayEvent(),
         event.getMyStatus() === CalendarApp.GuestStatus.NO,
-        event.getDescription().includes(REMINDERS_REMOVED_MARKER),
+        title.startsWith(HOLD_TAG) &&
+          event.getDescription().includes(REMINDERS_REMOVED_MARKER),
       );
     });
     this.listTimedEventsCache.set(key, events);

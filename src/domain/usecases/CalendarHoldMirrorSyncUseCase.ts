@@ -19,6 +19,12 @@ interface ReminderRepair {
   readonly placeholder: ExistingHoldPlaceholder;
 }
 
+interface PendingCreate {
+  readonly calendar: CalendarRef;
+  readonly label: string;
+  readonly placeholder: HoldPlaceholder;
+}
+
 export class CalendarHoldMirrorSyncUseCase {
   constructor(
     readonly calendarPort: CalendarPort,
@@ -58,7 +64,16 @@ export class CalendarHoldMirrorSyncUseCase {
     const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
     const failures = new CalendarSyncFailureCollector();
     const repairs: ReminderRepair[] = [];
-    this.pushToHub(hub, ownEvents, hubEvents, ownDomain, failures, repairs);
+    const pendingCreates: PendingCreate[] = [];
+    this.pushToHub(
+      hub,
+      ownEvents,
+      hubEvents,
+      ownDomain,
+      failures,
+      repairs,
+      pendingCreates,
+    );
     this.pullFromHub(
       own,
       ownEvents,
@@ -67,8 +82,10 @@ export class CalendarHoldMirrorSyncUseCase {
       configuration,
       failures,
       repairs,
+      pendingCreates,
     );
     this.repairReminders(repairs, failures);
+    this.createPlaceholders(pendingCreates, failures);
     failures.throwIfAny();
   }
 
@@ -79,6 +96,7 @@ export class CalendarHoldMirrorSyncUseCase {
     ownDomain: string,
     failures: CalendarSyncFailureCollector,
     repairs: ReminderRepair[],
+    pendingCreates: PendingCreate[],
   ): void {
     const desired =
       HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
@@ -110,10 +128,11 @@ export class CalendarHoldMirrorSyncUseCase {
       }
     }
     for (const placeholder of toCreate) {
-      failures.attempt(
-        `create hub placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
-        () => this.calendarPort.createHoldPlaceholder(hub, placeholder),
-      );
+      pendingCreates.push({
+        calendar: hub,
+        label: `create hub placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
+        placeholder,
+      });
     }
     this.collectRepairs(
       hub,
@@ -132,6 +151,7 @@ export class CalendarHoldMirrorSyncUseCase {
     configuration: SyncConfiguration,
     failures: CalendarSyncFailureCollector,
     repairs: ReminderRepair[],
+    pendingCreates: PendingCreate[],
   ): void {
     const desired =
       HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
@@ -157,10 +177,11 @@ export class CalendarHoldMirrorSyncUseCase {
       }
     }
     for (const placeholder of toCreate) {
-      failures.attempt(
-        `create own placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
-        () => this.calendarPort.createHoldPlaceholder(own, placeholder),
-      );
+      pendingCreates.push({
+        calendar: own,
+        label: `create own placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
+        placeholder,
+      });
     }
     this.collectRepairs(own, 'own', existing, deletedIds, repairs);
   }
@@ -200,6 +221,17 @@ export class CalendarHoldMirrorSyncUseCase {
             calendar,
             placeholder.id,
           ),
+      );
+    }
+  }
+
+  private createPlaceholders(
+    pendingCreates: PendingCreate[],
+    failures: CalendarSyncFailureCollector,
+  ): void {
+    for (const { calendar, label, placeholder } of pendingCreates) {
+      failures.attempt(label, () =>
+        this.calendarPort.createHoldPlaceholder(calendar, placeholder),
       );
     }
   }

@@ -186,6 +186,33 @@ describe('CalendarAppCalendarPort', () => {
         ['ev-empty', false],
       ]);
     });
+
+    it('does not read the description of a timed event whose title is not the hold tag', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-15T00:00:00Z');
+      const getDescription = jest.fn(() => REMINDERS_REMOVED_MARKER);
+      const standup = {
+        getId: jest.fn(() => 'ev-standup'),
+        getTitle: jest.fn(() => 'Standup'),
+        getStartTime: jest.fn(() => ({ getTime: () => 1577836800000 })),
+        getEndTime: jest.fn(() => ({ getTime: () => 1577840400000 })),
+        isAllDayEvent: jest.fn(() => false),
+        getMyStatus: jest.fn(() => ''),
+        getDescription,
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEvents: jest.fn(() => [standup]),
+        getEventById: jest.fn(),
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      const events = port.listTimedEvents(makeOwnCalendarRef(), from, to);
+
+      expect(getDescription).not.toHaveBeenCalled();
+      expect(events[0].hasRemindersRemoved).toBe(false);
+    });
   });
 
   describe('removeHoldPlaceholderReminders', () => {

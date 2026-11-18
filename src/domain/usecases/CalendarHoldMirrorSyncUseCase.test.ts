@@ -704,4 +704,84 @@ describe('CalendarHoldMirrorSyncUseCase reminder repair scope and cap', () => {
         .map((index) => `own-${index}`),
     );
   });
+
+  it('repairs reminders of existing placeholders before any create call', () => {
+    const keptStart = new Date('2020-01-02T10:00:00Z');
+    const keptEnd = new Date('2020-01-02T11:00:00Z');
+    const newStart = new Date('2020-01-03T10:00:00Z');
+    const newEnd = new Date('2020-01-03T11:00:00Z');
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'own-kept-meeting',
+          'Standup',
+          keptStart,
+          keptEnd,
+          false,
+          false,
+        ),
+        new CalendarEvent(
+          'own-new-meeting',
+          'Planning',
+          newStart,
+          newEnd,
+          false,
+          false,
+        ),
+      ],
+      hub: [
+        new CalendarEvent(
+          'hub-kept-hold',
+          `${HOLD_TAG} ${OWN_DOMAIN}`,
+          keptStart,
+          keptEnd,
+          false,
+          false,
+          false,
+        ),
+      ],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
+      HUB,
+      'hub-kept-hold',
+    );
+    expect(calendarPort.createHoldPlaceholder).toHaveBeenCalledTimes(1);
+    const lastRepairCall = Math.max(
+      ...calendarPort.removeHoldPlaceholderReminders.mock.invocationCallOrder,
+    );
+    const firstCreateCall = Math.min(
+      ...calendarPort.createHoldPlaceholder.mock.invocationCallOrder,
+    );
+    expect(lastRepairCall).toBeLessThan(firstCreateCall);
+  });
+
+  it('fails the run naming both errors when a created placeholder cannot be repaired or deleted', () => {
+    const newStart = new Date('2020-01-03T10:00:00Z');
+    const newEnd = new Date('2020-01-03T11:00:00Z');
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'own-new-meeting',
+          'Planning',
+          newStart,
+          newEnd,
+          false,
+          false,
+        ),
+      ],
+      hub: [],
+    });
+    calendarPort.createHoldPlaceholder.mockImplementationOnce(() => {
+      throw new Error(
+        'Could not remove reminders from hold placeholder "[HOLD] example.com" (reminder failed), and deleting the created event also failed (delete failed)',
+      );
+    });
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(
+      /reminder failed[\s\S]*delete failed/,
+    );
+  });
 });
