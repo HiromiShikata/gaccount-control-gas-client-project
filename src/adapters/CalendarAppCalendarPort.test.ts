@@ -1,5 +1,6 @@
 import { CalendarRef } from '../domain/entities/CalendarRef';
 import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
+import { REMINDERS_REMOVED_MARKER } from '../domain/entities/CalendarEventTags';
 import { CalendarAppCalendarPort } from './CalendarAppCalendarPort';
 
 const makeOwnCalendarRef = (): CalendarRef => ({ type: 'own' });
@@ -55,6 +56,7 @@ describe('CalendarAppCalendarPort', () => {
         getEndTime: jest.fn(() => ({ getTime: () => endMs })),
         isAllDayEvent: jest.fn(() => false),
         getMyStatus: jest.fn(() => ''),
+        getDescription: jest.fn(() => ''),
       }) as unknown as GoogleAppsScript.Calendar.CalendarEvent;
 
     it('calls getEvents only once when called twice with identical arguments', () => {
@@ -144,6 +146,96 @@ describe('CalendarAppCalendarPort', () => {
     });
   });
 
+  describe('listTimedEvents reminder marker', () => {
+    const makeMarkedGasEvent = (
+      id: string,
+      description: string,
+    ): GoogleAppsScript.Calendar.CalendarEvent =>
+      ({
+        getId: jest.fn(() => id),
+        getTitle: jest.fn(() => '[HOLD]'),
+        getStartTime: jest.fn(() => ({ getTime: () => 1577836800000 })),
+        getEndTime: jest.fn(() => ({ getTime: () => 1577840400000 })),
+        isAllDayEvent: jest.fn(() => false),
+        getMyStatus: jest.fn(() => ''),
+        getDescription: jest.fn(() => description),
+      }) as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+
+    it('reports hasRemindersRemoved true only for events whose description carries the marker', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-15T00:00:00Z');
+      const calendar = {
+        getEvents: jest.fn(() => [
+          makeMarkedGasEvent('ev-marked', `Note\n${REMINDERS_REMOVED_MARKER}`),
+          makeMarkedGasEvent('ev-unmarked', 'Note'),
+          makeMarkedGasEvent('ev-empty', ''),
+        ]),
+        getEventById: jest.fn(),
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      const events = port.listTimedEvents(makeOwnCalendarRef(), from, to);
+
+      expect(events.map((event) => [event.id, event.hasRemindersRemoved])).toEqual(
+        [
+          ['ev-marked', true],
+          ['ev-unmarked', false],
+          ['ev-empty', false],
+        ],
+      );
+    });
+  });
+
+  describe('removeHoldPlaceholderReminders', () => {
+    it('removes all reminders and appends the marker while keeping the existing description', () => {
+      const event = {
+        removeAllReminders: jest.fn(),
+        getDescription: jest.fn(() => 'Keep this note'),
+        setDescription: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = makeCalendar(event);
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.removeHoldPlaceholderReminders(makeOwnCalendarRef(), 'event-id');
+
+      expect(event.removeAllReminders).toHaveBeenCalledTimes(1);
+      expect(event.setDescription).toHaveBeenCalledWith(
+        `Keep this note\n${REMINDERS_REMOVED_MARKER}`,
+      );
+    });
+
+    it('throws and does not mark the event when removeAllReminders throws', () => {
+      const event = {
+        removeAllReminders: jest.fn(() => {
+          throw new Error('Service invoked too many times');
+        }),
+        getDescription: jest.fn(() => ''),
+        setDescription: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = makeCalendar(event);
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      expect(() =>
+        port.removeHoldPlaceholderReminders(makeOwnCalendarRef(), 'event-id'),
+      ).toThrow('Service invoked too many times');
+      expect(event.setDescription).not.toHaveBeenCalled();
+    });
+
+    it('throws when the event is not found', () => {
+      const calendar = makeCalendar(null);
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      expect(() =>
+        port.removeHoldPlaceholderReminders(makeOwnCalendarRef(), 'missing-id'),
+      ).toThrow('missing-id');
+    });
+  });
+
   describe('deleteEvent', () => {
     it('does not call getEventById when the event was already loaded by listTimedEvents', () => {
       const from = new Date('2020-01-01T00:00:00Z');
@@ -179,7 +271,7 @@ describe('CalendarAppCalendarPort', () => {
       expect(gasEvent.deleteEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('does not throw when deleteEvent throws because the event was already deleted', () => {
+    it('throws when deleteEvent throws because the event was already deleted', () => {
       const alreadyDeletedEvent = makeEvent({
         deleteEvent: () => {
           throw new Error(
@@ -191,32 +283,9 @@ describe('CalendarAppCalendarPort', () => {
       setupCalendarApp(calendar);
       const port = new CalendarAppCalendarPort();
 
-      expect(() =>
-        port.deleteEvent(makeOwnCalendarRef(), 'event-id'),
-      ).not.toThrow();
-    });
-
-    it('logs an error to console.error when deleteEvent throws', () => {
-      const consoleSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-      const alreadyDeletedEvent = makeEvent({
-        deleteEvent: () => {
-          throw new Error(
-            'The calendar event does not exist, or it has already been deleted.',
-          );
-        },
-      });
-      const calendar = makeCalendar(alreadyDeletedEvent);
-      setupCalendarApp(calendar);
-      const port = new CalendarAppCalendarPort();
-
-      port.deleteEvent(makeOwnCalendarRef(), 'event-id');
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to delete event event-id'),
+      expect(() => port.deleteEvent(makeOwnCalendarRef(), 'event-id')).toThrow(
+        'already been deleted',
       );
-      consoleSpy.mockRestore();
     });
 
     it('does nothing when the event is not found', () => {
@@ -271,6 +340,7 @@ describe('CalendarAppCalendarPort', () => {
       );
       const createdEvent = {
         removeAllReminders: jest.fn(),
+        setDescription: jest.fn(),
         setTransparency: jest.fn(),
       } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
       const calendar = {
@@ -285,7 +355,62 @@ describe('CalendarAppCalendarPort', () => {
       expect(createdEvent.setTransparency).not.toHaveBeenCalled();
     });
 
-    it('does not throw when createEvent throws', () => {
+    it('removes reminders before marking the created event', () => {
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const order: string[] = [];
+      const createdEvent = {
+        removeAllReminders: jest.fn(() => {
+          order.push('removeAllReminders');
+        }),
+        setDescription: jest.fn(() => {
+          order.push('setDescription');
+        }),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => createdEvent),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder);
+
+      expect(order).toEqual(['removeAllReminders', 'setDescription']);
+      expect(createdEvent.setDescription).toHaveBeenCalledWith(
+        REMINDERS_REMOVED_MARKER,
+      );
+    });
+
+    it('throws and does not mark the created event when removeAllReminders throws', () => {
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const createdEvent = {
+        removeAllReminders: jest.fn(() => {
+          throw new Error('Service invoked too many times');
+        }),
+        setDescription: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => createdEvent),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      expect(() =>
+        port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
+      ).toThrow('Service invoked too many times');
+      expect(createdEvent.setDescription).not.toHaveBeenCalled();
+    });
+
+    it('throws when createEvent throws, so the failure reaches the run', () => {
       const placeholder = new HoldPlaceholder(
         'HOLD test',
         new Date('2020-01-01T09:00:00Z'),
@@ -304,38 +429,7 @@ describe('CalendarAppCalendarPort', () => {
 
       expect(() =>
         port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
-      ).not.toThrow();
-    });
-
-    it('logs an error to console.error when createEvent throws', () => {
-      const consoleSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-      const placeholder = new HoldPlaceholder(
-        'HOLD test',
-        new Date('2020-01-01T09:00:00Z'),
-        new Date('2020-01-01T10:00:00Z'),
-      );
-      const calendar = {
-        getEventById: jest.fn(),
-        createEvent: jest.fn(() => {
-          throw new Error(
-            'You have been creating or deleting too many calendars or calendar events in a short time',
-          );
-        }),
-      } as unknown as GoogleAppsScript.Calendar.Calendar;
-      setupCalendarApp(calendar);
-      const port = new CalendarAppCalendarPort();
-
-      port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to create hold placeholder'),
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining(placeholder.title),
-      );
-      consoleSpy.mockRestore();
+      ).toThrow('too many calendars');
     });
   });
 

@@ -32,6 +32,9 @@ const createMocks = (
     deleteEvent: jest.fn(
       (_calendar: CalendarRef, _eventId: string): void => {},
     ),
+    removeHoldPlaceholderReminders: jest.fn(
+      (_calendar: CalendarRef, _eventId: string): void => {},
+    ),
     setEventColor: jest.fn(
       (
         _calendar: CalendarRef,
@@ -372,5 +375,202 @@ describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
       [hub, 'hub-placeholder-a'],
       [hub, 'hub-placeholder-b'],
     ]);
+  });
+});
+
+describe('CalendarHoldMirrorSyncUseCase reminder repair and failure handling', () => {
+  const HUB: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
+  const OWN: CalendarRef = { type: 'own' };
+  const meetingStart = new Date('2020-01-02T10:00:00Z');
+  const meetingEnd = new Date('2020-01-02T11:00:00Z');
+  const hubMeeting = new CalendarEvent(
+    'hub-meeting',
+    'Meeting',
+    meetingStart,
+    meetingEnd,
+    false,
+    false,
+  );
+
+  it('removes reminders from an own placeholder that lacks the marker', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'own-hold',
+          HOLD_TAG,
+          meetingStart,
+          meetingEnd,
+          false,
+          false,
+          false,
+        ),
+      ],
+      hub: [hubMeeting],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
+      OWN,
+      'own-hold',
+    );
+  });
+
+  it('does not touch an own placeholder that already carries the marker', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'own-hold',
+          HOLD_TAG,
+          meetingStart,
+          meetingEnd,
+          false,
+          false,
+          true,
+        ),
+      ],
+      hub: [hubMeeting],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.removeHoldPlaceholderReminders).not.toHaveBeenCalled();
+    expect(calendarPort.createHoldPlaceholder).not.toHaveBeenCalled();
+  });
+
+  it('removes reminders from a kept hub placeholder that lacks the marker', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'own-standup',
+          'Standup',
+          meetingStart,
+          meetingEnd,
+          false,
+          false,
+        ),
+      ],
+      hub: [
+        new CalendarEvent(
+          'hub-hold',
+          `${HOLD_TAG} ${OWN_DOMAIN}`,
+          meetingStart,
+          meetingEnd,
+          false,
+          false,
+        ),
+      ],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
+      HUB,
+      'hub-hold',
+    );
+    expect(calendarPort.deleteEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not remove reminders from a placeholder that reconciliation deletes', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'stale-hold',
+          HOLD_TAG,
+          new Date('2020-01-05T00:00:00Z'),
+          new Date('2020-01-05T00:30:00Z'),
+          false,
+          false,
+        ),
+      ],
+      hub: [],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent).toHaveBeenCalledWith(OWN, 'stale-hold');
+    expect(calendarPort.removeHoldPlaceholderReminders).not.toHaveBeenCalled();
+  });
+
+  it('keeps running after a create fails and throws an error naming the failed item', () => {
+    const laterStart = new Date('2020-01-03T10:00:00Z');
+    const laterEnd = new Date('2020-01-03T11:00:00Z');
+    const { useCase, calendarPort } = createMocks({
+      own: [],
+      hub: [
+        hubMeeting,
+        new CalendarEvent(
+          'hub-later',
+          'Later',
+          laterStart,
+          laterEnd,
+          false,
+          false,
+        ),
+      ],
+    });
+    calendarPort.createHoldPlaceholder.mockImplementationOnce(() => {
+      throw new Error('quota exceeded');
+    });
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(
+      /2020-01-02T10:00:00\.000Z.*quota exceeded/,
+    );
+    expect(calendarPort.createHoldPlaceholder).toHaveBeenCalledTimes(2);
+  });
+
+  it('names every failed reminder removal and still deletes the other stale placeholder', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'own-hold',
+          HOLD_TAG,
+          meetingStart,
+          meetingEnd,
+          false,
+          false,
+          false,
+        ),
+        new CalendarEvent(
+          'stale-hold',
+          HOLD_TAG,
+          new Date('2020-01-05T00:00:00Z'),
+          new Date('2020-01-05T00:30:00Z'),
+          false,
+          false,
+          false,
+        ),
+      ],
+      hub: [hubMeeting],
+    });
+    calendarPort.removeHoldPlaceholderReminders.mockImplementationOnce(() => {
+      throw new Error('Service invoked too many times');
+    });
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/own-hold/);
+    expect(calendarPort.deleteEvent).toHaveBeenCalledWith(OWN, 'stale-hold');
+  });
+
+  it('throws when a delete fails and still performs the remaining creates', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [
+        new CalendarEvent(
+          'stale-hold',
+          HOLD_TAG,
+          new Date('2020-01-05T00:00:00Z'),
+          new Date('2020-01-05T00:30:00Z'),
+          false,
+          false,
+          true,
+        ),
+      ],
+      hub: [hubMeeting],
+    });
+    calendarPort.deleteEvent.mockImplementationOnce(() => {
+      throw new Error('already deleted');
+    });
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/stale-hold/);
+    expect(calendarPort.createHoldPlaceholder).toHaveBeenCalledTimes(1);
   });
 });
