@@ -397,6 +397,7 @@ describe('CalendarAppCalendarPort', () => {
           throw new Error('Service invoked too many times');
         }),
         setDescription: jest.fn(),
+        deleteEvent: jest.fn(),
       } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
       const calendar = {
         getEventById: jest.fn(),
@@ -409,6 +410,85 @@ describe('CalendarAppCalendarPort', () => {
         port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
       ).toThrow('Service invoked too many times');
       expect(createdEvent.setDescription).not.toHaveBeenCalled();
+    });
+
+    it('deletes the created event and rethrows the original error when removeAllReminders throws', () => {
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const createdEvent = {
+        removeAllReminders: jest.fn(() => {
+          throw new Error('Service invoked too many times');
+        }),
+        setDescription: jest.fn(),
+        deleteEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => createdEvent),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      expect(() =>
+        port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
+      ).toThrow('Service invoked too many times');
+      expect(createdEvent.deleteEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes the created event and rethrows the original error when setDescription throws', () => {
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const createdEvent = {
+        removeAllReminders: jest.fn(),
+        setDescription: jest.fn(() => {
+          throw new Error('description write failed');
+        }),
+        deleteEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => createdEvent),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      expect(() =>
+        port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
+      ).toThrow('description write failed');
+      expect(createdEvent.deleteEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws an error naming both failures when the created event cannot be deleted', () => {
+      const placeholder = new HoldPlaceholder(
+        'HOLD test',
+        new Date('2020-01-01T09:00:00Z'),
+        new Date('2020-01-01T10:00:00Z'),
+      );
+      const createdEvent = {
+        removeAllReminders: jest.fn(() => {
+          throw new Error('reminder failed');
+        }),
+        setDescription: jest.fn(),
+        deleteEvent: jest.fn(() => {
+          throw new Error('delete failed');
+        }),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEventById: jest.fn(),
+        createEvent: jest.fn(() => createdEvent),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      setupCalendarApp(calendar);
+      const port = new CalendarAppCalendarPort();
+
+      expect(() =>
+        port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
+      ).toThrow(/reminder failed[\s\S]*delete failed/);
     });
 
     it('throws when createEvent throws, so the failure reaches the run', () => {

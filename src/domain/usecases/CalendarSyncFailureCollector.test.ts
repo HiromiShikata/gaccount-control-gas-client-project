@@ -49,3 +49,16 @@ describe('CalendarSyncFailureCollector', () => {
     expect(run).toHaveBeenCalledTimes(expectedRunCount);
   });
 });
+
+describe('CalendarSyncFailureCollector.attempt result', () => {
+  it('returns true when the operation succeeds and false when it fails', () => {
+    const collector = new CalendarSyncFailureCollector();
+
+    expect(collector.attempt('ok', () => {})).toBe(true);
+    expect(
+      collector.attempt('bad', () => {
+        throw new Error('boom');
+      }),
+    ).toBe(false);
+  });
+});

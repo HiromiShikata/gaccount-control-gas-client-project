@@ -3,7 +3,10 @@ import { CalendarEventColor } from '../entities/CalendarEventColor';
 import { CalendarRef } from '../entities/CalendarRef';
 import { HoldPlaceholder } from '../entities/HoldPlaceholder';
 import { HOLD_TAG } from '../entities/HoldPlaceholderReconciliation';
-import { CalendarHoldMirrorSyncUseCase } from './CalendarHoldMirrorSyncUseCase';
+import {
+  CalendarHoldMirrorSyncUseCase,
+  MAX_REMINDER_REPAIRS_PER_RUN,
+} from './CalendarHoldMirrorSyncUseCase';
 
 const OWN_DOMAIN = 'example.com';
 const HUB_CALENDAR_ID = 'hub-calendar-id';
@@ -572,5 +575,133 @@ describe('CalendarHoldMirrorSyncUseCase reminder repair and failure handling', (
 
     expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/stale-hold/);
     expect(calendarPort.createHoldPlaceholder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CalendarHoldMirrorSyncUseCase reminder repair scope and cap', () => {
+  const HUB: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
+  const OWN: CalendarRef = { type: 'own' };
+  const hour = (n: number): Date => new Date(Date.UTC(2020, 0, 2, n));
+  const meeting = (id: string, n: number): CalendarEvent =>
+    new CalendarEvent(id, 'Meeting', hour(n), hour(n + 1), false, false);
+  const unmarkedOwnHold = (id: string, n: number): CalendarEvent =>
+    new CalendarEvent(id, HOLD_TAG, hour(n), hour(n + 1), false, false, false);
+  const unmarkedHubHold = (id: string, n: number): CalendarEvent =>
+    new CalendarEvent(
+      id,
+      `${HOLD_TAG} ${OWN_DOMAIN}`,
+      hour(n),
+      hour(n + 1),
+      false,
+      false,
+      false,
+    );
+  const ownStandup = (n: number): CalendarEvent =>
+    new CalendarEvent(
+      'own-standup',
+      'Standup',
+      hour(n),
+      hour(n + 1),
+      false,
+      false,
+    );
+
+  it('still removes reminders from an own placeholder whose delete failed', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [unmarkedOwnHold('stale', 30)],
+      hub: [],
+    });
+    calendarPort.deleteEvent.mockImplementationOnce(() => {
+      throw new Error('delete failed');
+    });
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/stale/);
+    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
+      OWN,
+      'stale',
+    );
+  });
+
+  it('still removes reminders from a duplicate hub placeholder whose delete failed', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [ownStandup(3)],
+      hub: [unmarkedHubHold('hub-dup', 3), unmarkedHubHold('hub-keep', 3)],
+    });
+    calendarPort.deleteEvent.mockImplementation(
+      (_calendar: CalendarRef, eventId: string) => {
+        if (eventId === 'hub-keep') {
+          throw new Error('delete failed');
+        }
+      },
+    );
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/hub-keep/);
+    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
+      HUB,
+      'hub-keep',
+    );
+  });
+
+  it('does not remove reminders from a placeholder whose delete succeeded', () => {
+    const { useCase, calendarPort } = createMocks({
+      own: [unmarkedOwnHold('stale', 30)],
+      hub: [],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent).toHaveBeenCalledWith(OWN, 'stale');
+    expect(calendarPort.removeHoldPlaceholderReminders).not.toHaveBeenCalled();
+  });
+
+  it('spends the per-run cap on the earliest starts across both calendars', () => {
+    const { calendarPort, configPort, logPort } = createMocks({
+      own: [
+        ownStandup(2),
+        unmarkedOwnHold('own-h9', 9),
+        unmarkedOwnHold('own-h5', 5),
+      ],
+      hub: [
+        meeting('hub-h5', 5),
+        meeting('hub-h9', 9),
+        unmarkedHubHold('hub-h2', 2),
+      ],
+    });
+    const useCase = new CalendarHoldMirrorSyncUseCase(
+      calendarPort,
+      configPort,
+      logPort,
+      2,
+    );
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.removeHoldPlaceholderReminders.mock.calls).toEqual([
+      [HUB, 'hub-h2'],
+      [OWN, 'own-h5'],
+    ]);
+  });
+
+  it('repairs at most MAX_REMINDER_REPAIRS_PER_RUN placeholders, earliest first', () => {
+    const count = MAX_REMINDER_REPAIRS_PER_RUN + 1;
+    const indexes = Array.from({ length: count }, (_, index) => index);
+    const { useCase, calendarPort } = createMocks({
+      own: [...indexes]
+        .reverse()
+        .map((index) => unmarkedOwnHold(`own-${index}`, index)),
+      hub: indexes.map((index) => meeting(`hub-${index}`, index)),
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    const repairedIds =
+      calendarPort.removeHoldPlaceholderReminders.mock.calls.map(
+        (call) => call[1],
+      );
+    expect(repairedIds).toEqual(
+      indexes
+        .slice(0, MAX_REMINDER_REPAIRS_PER_RUN)
+        .map((index) => `own-${index}`),
+    );
   });
 });

@@ -11,6 +11,8 @@ import { CalendarSyncFailureCollector } from './CalendarSyncFailureCollector';
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
+export const MAX_REMINDER_REPAIRS_PER_RUN = 50;
+
 export class CalendarHoldMirrorSyncUseCase {
   constructor(
     readonly calendarPort: CalendarPort,
