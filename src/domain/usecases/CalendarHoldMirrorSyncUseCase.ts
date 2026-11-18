@@ -11,13 +11,6 @@ import { CalendarSyncFailureCollector } from './CalendarSyncFailureCollector';
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
-/**
- * Upper bound on reminder removals per run. Each removal is two calendar
- * writes, and a run already takes up to about 1215 s against a 1800 s Apps
- * Script limit, so a first run after deploy must not add an unbounded number
- * of writes. Earliest-starting placeholders go first; the rest wait for later
- * runs, which see them still unmarked.
- */
 export const MAX_REMINDER_REPAIRS_PER_RUN = 50;
 
 interface ReminderRepair {
