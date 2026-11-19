@@ -564,6 +564,33 @@ describe('CalendarHoldMirrorSyncUseCase invalid reminders on managed placeholder
   });
 });
 
+const recordCalls = (
+  {
+    calendarPort,
+    holdPlaceholderPort,
+  }: Pick<
+    ReturnType<typeof createMocks>,
+    'calendarPort' | 'holdPlaceholderPort'
+  >,
+  failingEventId?: string,
+): unknown[][] => {
+  const calls: unknown[][] = [];
+  calendarPort.deleteEvent.mockImplementation(
+    (calendar: CalendarRef, eventId: string): void => {
+      calls.push(['deleteEvent', calendar, eventId]);
+      if (eventId === failingEventId) {
+        throw new Error(`delete of ${eventId} failed`);
+      }
+    },
+  );
+  holdPlaceholderPort.createHoldPlaceholder.mockImplementation(
+    (calendar: CalendarRef, placeholder: HoldPlaceholder): void => {
+      calls.push(['createHoldPlaceholder', calendar, placeholder]);
+    },
+  );
+  return calls;
+};
+
 describe('CalendarHoldMirrorSyncUseCase listing failures', () => {
   const OWN_HOLD_TITLE = `${HOLD_TAG} ${OWN_DOMAIN}`;
   const LATER_START = new Date('2020-01-03T10:00:00Z');
@@ -657,33 +684,6 @@ describe('CalendarHoldMirrorSyncUseCase recreation order', () => {
   const OWN_HOLD_TITLE = `${HOLD_TAG} ${OWN_DOMAIN}`;
   const LATER_START = new Date('2020-01-03T10:00:00Z');
   const LATER_END = new Date('2020-01-03T11:00:00Z');
-
-  const recordCalls = (
-    {
-      calendarPort,
-      holdPlaceholderPort,
-    }: Pick<
-      ReturnType<typeof createMocks>,
-      'calendarPort' | 'holdPlaceholderPort'
-    >,
-    failingEventId?: string,
-  ): unknown[][] => {
-    const calls: unknown[][] = [];
-    calendarPort.deleteEvent.mockImplementation(
-      (calendar: CalendarRef, eventId: string): void => {
-        calls.push(['deleteEvent', calendar, eventId]);
-        if (eventId === failingEventId) {
-          throw new Error(`delete of ${eventId} failed`);
-        }
-      },
-    );
-    holdPlaceholderPort.createHoldPlaceholder.mockImplementation(
-      (calendar: CalendarRef, placeholder: HoldPlaceholder): void => {
-        calls.push(['createHoldPlaceholder', calendar, placeholder]);
-      },
-    );
-    return calls;
-  };
 
   it('deletes and recreates each invalid kept hub placeholder before moving to the next one', () => {
     const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
