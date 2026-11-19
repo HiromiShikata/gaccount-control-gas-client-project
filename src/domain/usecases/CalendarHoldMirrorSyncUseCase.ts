@@ -17,12 +17,6 @@ interface PlaceholderSide {
   readonly calendarLabel: 'own' | 'hub';
 }
 
-interface PendingCreate {
-  readonly calendar: CalendarRef;
-  readonly label: string;
-  readonly placeholder: HoldPlaceholder;
-}
-
 export class CalendarHoldMirrorSyncUseCase {
   constructor(
     readonly calendarPort: CalendarPort,
@@ -81,7 +75,6 @@ export class CalendarHoldMirrorSyncUseCase {
         ),
       );
     });
-    const pendingCreates: PendingCreate[] = [];
     this.pushToHub(
       hub,
       ownEvents,
@@ -89,7 +82,6 @@ export class CalendarHoldMirrorSyncUseCase {
       ownDomain,
       invalidHubIds,
       failures,
-      pendingCreates,
     );
     this.pullFromHub(
       own,
@@ -99,11 +91,7 @@ export class CalendarHoldMirrorSyncUseCase {
       configuration,
       invalidOwnIds,
       failures,
-      pendingCreates,
     );
-    for (const { calendar, label, placeholder } of pendingCreates) {
-      this.createPlaceholder(calendar, label, placeholder, failures);
-    }
     failures.throwIfAny();
   }
 
@@ -114,7 +102,6 @@ export class CalendarHoldMirrorSyncUseCase {
     ownDomain: string,
     invalidIds: ReadonlySet<string>,
     failures: CalendarSyncFailureCollector,
-    pendingCreates: PendingCreate[],
   ): void {
     const desired =
       HoldPlaceholderReconciliation.computePushDesiredPlaceholders(
@@ -138,7 +125,6 @@ export class CalendarHoldMirrorSyncUseCase {
       duplicates,
       invalidIds,
       failures,
-      pendingCreates,
     );
   }
 
@@ -150,7 +136,6 @@ export class CalendarHoldMirrorSyncUseCase {
     configuration: SyncConfiguration,
     invalidIds: ReadonlySet<string>,
     failures: CalendarSyncFailureCollector,
-    pendingCreates: PendingCreate[],
   ): void {
     const desired =
       HoldPlaceholderReconciliation.computePullDesiredPlaceholders(
@@ -168,7 +153,6 @@ export class CalendarHoldMirrorSyncUseCase {
       [],
       invalidIds,
       failures,
-      pendingCreates,
     );
   }
 
@@ -179,7 +163,6 @@ export class CalendarHoldMirrorSyncUseCase {
     duplicates: ExistingHoldPlaceholder[],
     invalidIds: ReadonlySet<string>,
     failures: CalendarSyncFailureCollector,
-    pendingCreates: PendingCreate[],
   ): void {
     const { toCreate, toDelete } = HoldPlaceholderReconciliation.reconcile(
       desired,
@@ -195,11 +178,12 @@ export class CalendarHoldMirrorSyncUseCase {
       }
     }
     for (const placeholder of toCreate) {
-      pendingCreates.push({
-        calendar: side.calendar,
-        label: `create ${side.calendarLabel} placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
+      this.createPlaceholder(
+        side.calendar,
+        `create ${side.calendarLabel} placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
         placeholder,
-      });
+        failures,
+      );
     }
     const deletingIds = new Set(toDelete.map((placeholder) => placeholder.id));
     for (const placeholder of kept) {
