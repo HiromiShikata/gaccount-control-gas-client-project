@@ -1,6 +1,7 @@
 import { CalendarAppCalendarPort } from './adapters/CalendarAppCalendarPort';
 import { CalendarAppCalendarSubscriptionPort } from './adapters/CalendarAppCalendarSubscriptionPort';
 import { GasLogPort } from './adapters/GasLogPort';
+import { GoogleCalendarApiHoldPlaceholderPort } from './adapters/GoogleCalendarApiHoldPlaceholderPort';
 import { ScriptAppTriggerPort } from './adapters/ScriptAppTriggerPort';
 import { LockServiceScriptLockPort } from './adapters/LockServiceScriptLockPort';
 import { ScriptPropertiesConfigPort } from './adapters/ScriptPropertiesConfigPort';
@@ -32,7 +33,12 @@ function sync(): void {
     );
     const ownDomain = Session.getActiveUser().getEmail().split('@')[1];
     new CalendarSyncRunUseCase(
-      new CalendarHoldMirrorSyncUseCase(calendarPort, configPort, logPort),
+      new CalendarHoldMirrorSyncUseCase(
+        calendarPort,
+        new GoogleCalendarApiHoldPlaceholderPort(),
+        configPort,
+        logPort,
+      ),
       new CalendarEventColorSyncUseCase(calendarPort, configPort, logPort),
     ).execute(now, ownDomain);
   });

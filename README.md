@@ -18,25 +18,7 @@ now + `SYNC_DAYS` days:
   and end collapse to one placeholder. Placeholders in the legacy format
   `[HOLD] {ownDomain} {originalTitle}` are removed by the next run, and the
   new-format placeholder is created in their place.
-  Placeholders have their reminders removed and are marked busy (opaque).
-  Removal is recorded by appending the marker line
-  `[calendar-hold-mirror] reminders removed` to the placeholder's description.
-  A placeholder without that marker, including one created by an earlier run,
-  has its reminders removed on the next run and is then marked; a placeholder
-  with the marker is not written again. The marker is used instead of reading
-  the reminders back, because the Apps Script reference for `CalendarEvent`
-  does not state whether its reminder getters report reminders inherited from
-  the calendar's defaults.
-  A placeholder carrying the marker is not re-checked, so a reminder added to
-  it later (for example by hand) is not removed by the script.
-  Each run removes reminders from at most 50 placeholders, across the own and
-  hub calendars, taking the earliest start first. The rest are left for later
-  runs, which see them still unmarked. A placeholder whose delete failed is
-  still eligible, so its reminders are removed if it is still unmarked.
-  A placeholder created by a run whose reminder removal fails is deleted again
-  in the same call, so it is not left with its default reminders. If that
-  cleanup delete also fails, the run fails with an error naming both failures,
-  and the placeholder stays unmarked, so a later run removes its reminders.
+  Each placeholder is created with reminders off and marked busy (opaque).
 - Pull: for each hub timed event, skipping all-day events, this domain's own
   holds, and declined events, a `[HOLD]` placeholder is reconciled onto the
   account's own calendar. When the hub event title contains the configured
@@ -48,10 +30,22 @@ deduplication key is start time, end time, and title. On the hub, when several
 placeholders of this account share one key, the copy with the smallest event id
 is kept and every other copy is deleted, whether or not the key is still desired.
 
-A reminder removal or any other create or delete that fails is collected rather
-than skipped silently: the remaining operations still run, and the run ends by
-throwing an error that names every failed item, so the Apps Script execution is
-recorded as failed.
+Reminders are checked on every run, through the reminders field of each managed
+placeholder (its own pull placeholders and this account's hub push
+placeholders), read with the advanced Calendar service v3, which the manifest
+`src/appsscript.json` enables as `Calendar`. A placeholder is invalid when it has
+no `reminders` object, when `useDefault` is not `false`, or when `overrides` is
+not empty. Each run deletes every invalid managed placeholder that it is not
+already deleting, then recreates it with the same title, start and end. Every
+placeholder is created by one `Calendar.Events.insert` whose body sets
+`reminders: { useDefault: false, overrides: [] }` and `transparency: 'opaque'`,
+so no placeholder is left with default reminders. The advanced Calendar service
+requires the Calendar scope that CalendarApp already holds.
+
+Each delete or create that fails is collected rather than skipped silently: the
+remaining operations still run, a placeholder whose delete failed is not
+recreated, and the run ends by throwing one error that names every failed item,
+so the Apps Script execution is recorded as failed.
 
 Each run holds the Apps Script script lock for its whole duration. A run that
 cannot acquire the lock within one second logs a message and skips; the next

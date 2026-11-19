@@ -6,17 +6,15 @@ import { HoldPlaceholderReconciliation } from '../entities/HoldPlaceholderReconc
 import { SyncConfiguration } from '../entities/SyncConfiguration';
 import { CalendarPort } from './adapter-interfaces/CalendarPort';
 import { ConfigPort } from './adapter-interfaces/ConfigPort';
+import { HoldPlaceholderPort } from './adapter-interfaces/HoldPlaceholderPort';
 import { LogPort } from './adapter-interfaces/LogPort';
 import { CalendarSyncFailureCollector } from './CalendarSyncFailureCollector';
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
-export const MAX_REMINDER_REPAIRS_PER_RUN = 50;
-
-interface ReminderRepair {
+interface PlaceholderSide {
   readonly calendar: CalendarRef;
-  readonly calendarLabel: string;
-  readonly placeholder: ExistingHoldPlaceholder;
+  readonly calendarLabel: 'own' | 'hub';
 }
 
 interface PendingCreate {
@@ -28,9 +26,9 @@ interface PendingCreate {
 export class CalendarHoldMirrorSyncUseCase {
   constructor(
     readonly calendarPort: CalendarPort,
+    readonly holdPlaceholderPort: HoldPlaceholderPort,
     readonly configPort: ConfigPort,
     readonly logPort: LogPort,
-    readonly maxReminderRepairsPerRun: number = MAX_REMINDER_REPAIRS_PER_RUN,
   ) {}
 
   execute(now: Date, ownDomain: string): void {
@@ -62,16 +60,21 @@ export class CalendarHoldMirrorSyncUseCase {
     );
     const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
     const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
+    const invalidOwnIds = new Set(
+      this.holdPlaceholderPort.listEventIdsWithInvalidReminders(own, from, to),
+    );
+    const invalidHubIds = new Set(
+      this.holdPlaceholderPort.listEventIdsWithInvalidReminders(hub, from, to),
+    );
     const failures = new CalendarSyncFailureCollector();
-    const repairs: ReminderRepair[] = [];
     const pendingCreates: PendingCreate[] = [];
     this.pushToHub(
       hub,
       ownEvents,
       hubEvents,
       ownDomain,
+      invalidHubIds,
       failures,
-      repairs,
       pendingCreates,
     );
     this.pullFromHub(
@@ -80,11 +83,10 @@ export class CalendarHoldMirrorSyncUseCase {
       hubEvents,
       ownDomain,
       configuration,
+      invalidOwnIds,
       failures,
-      repairs,
       pendingCreates,
     );
-    this.repairReminders(repairs, failures);
     this.createPlaceholders(pendingCreates, failures);
     failures.throwIfAny();
   }
@@ -94,8 +96,8 @@ export class CalendarHoldMirrorSyncUseCase {
     ownEvents: CalendarEvent[],
     hubEvents: CalendarEvent[],
     ownDomain: string,
+    invalidIds: ReadonlySet<string>,
     failures: CalendarSyncFailureCollector,
-    repairs: ReminderRepair[],
     pendingCreates: PendingCreate[],
   ): void {
     const desired =
@@ -113,33 +115,14 @@ export class CalendarHoldMirrorSyncUseCase {
       HoldPlaceholderReconciliation.separateDuplicateExistingPlaceholders(
         existingAll,
       );
-    const { toCreate, toDelete } = HoldPlaceholderReconciliation.reconcile(
+    this.reconcilePlaceholders(
+      { calendar: hub, calendarLabel: 'hub' },
       desired,
       kept,
-    );
-    const deletedIds = new Set<string>();
-    for (const placeholder of [...toDelete, ...duplicates]) {
-      const deleted = failures.attempt(
-        `delete hub placeholder event ${placeholder.id}${this.describeWindow(placeholder)}`,
-        () => this.calendarPort.deleteEvent(hub, placeholder.id),
-      );
-      if (deleted) {
-        deletedIds.add(placeholder.id);
-      }
-    }
-    for (const placeholder of toCreate) {
-      pendingCreates.push({
-        calendar: hub,
-        label: `create hub placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
-        placeholder,
-      });
-    }
-    this.collectRepairs(
-      hub,
-      'hub',
-      [...kept, ...duplicates],
-      deletedIds,
-      repairs,
+      duplicates,
+      invalidIds,
+      failures,
+      pendingCreates,
     );
   }
 
@@ -149,8 +132,8 @@ export class CalendarHoldMirrorSyncUseCase {
     hubEvents: CalendarEvent[],
     ownDomain: string,
     configuration: SyncConfiguration,
+    invalidIds: ReadonlySet<string>,
     failures: CalendarSyncFailureCollector,
-    repairs: ReminderRepair[],
     pendingCreates: PendingCreate[],
   ): void {
     const desired =
@@ -162,67 +145,69 @@ export class CalendarHoldMirrorSyncUseCase {
       );
     const existing =
       HoldPlaceholderReconciliation.selectPullExistingPlaceholders(ownEvents);
-    const { toCreate, toDelete } = HoldPlaceholderReconciliation.reconcile(
+    this.reconcilePlaceholders(
+      { calendar: own, calendarLabel: 'own' },
       desired,
       existing,
+      [],
+      invalidIds,
+      failures,
+      pendingCreates,
     );
-    const deletedIds = new Set<string>();
-    for (const placeholder of toDelete) {
-      const deleted = failures.attempt(
-        `delete own placeholder event ${placeholder.id}${this.describeWindow(placeholder)}`,
-        () => this.calendarPort.deleteEvent(own, placeholder.id),
-      );
-      if (deleted) {
-        deletedIds.add(placeholder.id);
-      }
+  }
+
+  private reconcilePlaceholders(
+    side: PlaceholderSide,
+    desired: HoldPlaceholder[],
+    kept: ExistingHoldPlaceholder[],
+    duplicates: ExistingHoldPlaceholder[],
+    invalidIds: ReadonlySet<string>,
+    failures: CalendarSyncFailureCollector,
+    pendingCreates: PendingCreate[],
+  ): void {
+    const { toCreate, toDelete } = HoldPlaceholderReconciliation.reconcile(
+      desired,
+      kept,
+    );
+    for (const placeholder of [...toDelete, ...duplicates]) {
+      this.deletePlaceholder(side, placeholder, failures);
     }
     for (const placeholder of toCreate) {
       pendingCreates.push({
-        calendar: own,
-        label: `create own placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
+        calendar: side.calendar,
+        label: `create ${side.calendarLabel} placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
         placeholder,
       });
     }
-    this.collectRepairs(own, 'own', existing, deletedIds, repairs);
-  }
-
-  private collectRepairs(
-    calendar: CalendarRef,
-    calendarLabel: string,
-    existing: ExistingHoldPlaceholder[],
-    deletedIds: Set<string>,
-    repairs: ReminderRepair[],
-  ): void {
-    for (const placeholder of existing) {
-      if (deletedIds.has(placeholder.id)) {
+    const deletingIds = new Set(toDelete.map((placeholder) => placeholder.id));
+    for (const placeholder of kept) {
+      if (deletingIds.has(placeholder.id) || !invalidIds.has(placeholder.id)) {
         continue;
       }
-      repairs.push({ calendar, calendarLabel, placeholder });
+      const deleted = this.deletePlaceholder(side, placeholder, failures);
+      if (deleted) {
+        pendingCreates.push({
+          calendar: side.calendar,
+          label: `recreate ${side.calendarLabel} placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
+          placeholder: new HoldPlaceholder(
+            placeholder.title,
+            placeholder.startAt,
+            placeholder.endAt,
+          ),
+        });
+      }
     }
   }
 
-  private repairReminders(
-    repairs: ReminderRepair[],
+  private deletePlaceholder(
+    side: PlaceholderSide,
+    placeholder: ExistingHoldPlaceholder,
     failures: CalendarSyncFailureCollector,
-  ): void {
-    const candidates = repairs
-      .filter((repair) => !repair.placeholder.hasRemindersRemoved)
-      .sort(
-        (left, right) =>
-          left.placeholder.startAt.getTime() -
-          right.placeholder.startAt.getTime(),
-      )
-      .slice(0, this.maxReminderRepairsPerRun);
-    for (const { calendar, calendarLabel, placeholder } of candidates) {
-      failures.attempt(
-        `remove reminders from ${calendarLabel} placeholder event ${placeholder.id}${this.describeWindow(placeholder)}`,
-        () =>
-          this.calendarPort.removeHoldPlaceholderReminders(
-            calendar,
-            placeholder.id,
-          ),
-      );
-    }
+  ): boolean {
+    return failures.attempt(
+      `delete ${side.calendarLabel} placeholder event ${placeholder.id}${this.describeWindow(placeholder)}`,
+      () => this.calendarPort.deleteEvent(side.calendar, placeholder.id),
+    );
   }
 
   private createPlaceholders(
@@ -231,7 +216,7 @@ export class CalendarHoldMirrorSyncUseCase {
   ): void {
     for (const { calendar, label, placeholder } of pendingCreates) {
       failures.attempt(label, () =>
-        this.calendarPort.createHoldPlaceholder(calendar, placeholder),
+        this.holdPlaceholderPort.createHoldPlaceholder(calendar, placeholder),
       );
     }
   }

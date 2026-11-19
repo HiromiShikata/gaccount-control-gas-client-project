@@ -74,7 +74,6 @@ export class HoldPlaceholderReconciliation {
             event.title,
             event.startAt,
             event.endAt,
-            event.hasRemindersRemoved,
           ),
       );
   }
@@ -91,7 +90,6 @@ export class HoldPlaceholderReconciliation {
             event.title,
             event.startAt,
             event.endAt,
-            event.hasRemindersRemoved,
           ),
       );
   }
