@@ -1,5 +1,4 @@
 import { CalendarRef } from '../domain/entities/CalendarRef';
-import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
 import { CalendarAppCalendarPort } from './CalendarAppCalendarPort';
 
 const makeOwnCalendarRef = (): CalendarRef => ({ type: 'own' });
@@ -142,6 +141,99 @@ describe('CalendarAppCalendarPort', () => {
       expect(first).toEqual(second);
       expect(first[0].id).toBe('ev-1');
     });
+    it('maps each event to its id, title, start, end, all-day flag and declined status', () => {
+      const from = new Date('2020-01-01T00:00:00Z');
+      const to = new Date('2020-01-15T00:00:00Z');
+      const declinedEvent = {
+        getId: jest.fn(() => 'ev-declined'),
+        getTitle: jest.fn(() => 'Declined meeting'),
+        getStartTime: jest.fn(() => ({
+          getTime: () => Date.parse('2020-01-06T13:00:00Z'),
+        })),
+        getEndTime: jest.fn(() => ({
+          getTime: () => Date.parse('2020-01-06T14:00:00Z'),
+        })),
+        isAllDayEvent: jest.fn(() => true),
+        getMyStatus: jest.fn(() => 'NO'),
+      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
+      const calendar = {
+        getEvents: jest.fn(() => [declinedEvent]),
+        getEventById: jest.fn(),
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
+      (globalThis as unknown as Record<string, unknown>).CalendarApp = {
+        getDefaultCalendar: jest.fn(() => calendar),
+        getCalendarById: jest.fn((_id: string) => calendar),
+        GuestStatus: { NO: 'NO' },
+        EventTransparency: { OPAQUE: 'OPAQUE' },
+        EventColor: { PALE_RED: 'PALE_RED' },
+      };
+      const port = new CalendarAppCalendarPort();
+
+      const events = port.listTimedEvents(makeOwnCalendarRef(), from, to);
+      const mapped = events.map(
+        ({ id, title, startAt, endAt, isAllDay, isDeclined }) => ({
+          id,
+          title,
+          startAt,
+          endAt,
+          isAllDay,
+          isDeclined,
+        }),
+      );
+      expect(mapped).toEqual([
+        {
+          id: 'ev-declined',
+          title: 'Declined meeting',
+          startAt: new Date('2020-01-06T13:00:00Z'),
+          endAt: new Date('2020-01-06T14:00:00Z'),
+          isAllDay: true,
+          isDeclined: true,
+        },
+      ]);
+    });
+  });
+
+  describe('exists', () => {
+    it('returns true for the own calendar without resolving any calendar', () => {
+      const getCalendarById = jest.fn(() => null);
+      (globalThis as unknown as Record<string, unknown>).CalendarApp = {
+        getDefaultCalendar: jest.fn(),
+        getCalendarById,
+        GuestStatus: { NO: 'NO' },
+        EventTransparency: { OPAQUE: 'OPAQUE' },
+        EventColor: { PALE_RED: 'PALE_RED' },
+      };
+      const port = new CalendarAppCalendarPort();
+
+      expect(port.exists(makeOwnCalendarRef())).toBe(true);
+      expect(getCalendarById).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        name: 'returns true when the hub calendar is found',
+        found: true,
+        expected: true,
+      },
+      {
+        name: 'returns false when the hub calendar is not found',
+        found: false,
+        expected: false,
+      },
+    ])('$name', ({ found, expected }) => {
+      const calendar = makeCalendar(null);
+      (globalThis as unknown as Record<string, unknown>).CalendarApp = {
+        getDefaultCalendar: jest.fn(() => calendar),
+        getCalendarById: jest.fn((_id: string) => (found ? calendar : null)),
+        GuestStatus: { NO: 'NO' },
+        EventTransparency: { OPAQUE: 'OPAQUE' },
+        EventColor: { PALE_RED: 'PALE_RED' },
+      };
+      const port = new CalendarAppCalendarPort();
+
+      expect(port.exists(makeHubCalendarRef())).toBe(expected);
+    });
   });
 
   describe('deleteEvent', () => {
@@ -179,54 +271,43 @@ describe('CalendarAppCalendarPort', () => {
       expect(gasEvent.deleteEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('does not throw when deleteEvent throws because the event was already deleted', () => {
-      const alreadyDeletedEvent = makeEvent({
-        deleteEvent: () => {
-          throw new Error(
-            'The calendar event does not exist, or it has already been deleted.',
-          );
-        },
-      });
-      const calendar = makeCalendar(alreadyDeletedEvent);
-      setupCalendarApp(calendar);
-      const port = new CalendarAppCalendarPort();
-
-      expect(() =>
-        port.deleteEvent(makeOwnCalendarRef(), 'event-id'),
-      ).not.toThrow();
-    });
-
-    it('logs an error to console.error when deleteEvent throws', () => {
+    it('propagates an error thrown by deleteEvent unchanged, without logging it', () => {
       const consoleSpy = jest
         .spyOn(console, 'error')
         .mockImplementation(() => {});
-      const alreadyDeletedEvent = makeEvent({
+      const deleteError = new Error(
+        'The calendar event does not exist, or it has already been deleted.',
+      );
+      const event = makeEvent({
         deleteEvent: () => {
-          throw new Error(
-            'The calendar event does not exist, or it has already been deleted.',
-          );
+          throw deleteError;
         },
       });
-      const calendar = makeCalendar(alreadyDeletedEvent);
+      const calendar = makeCalendar(event);
       setupCalendarApp(calendar);
       const port = new CalendarAppCalendarPort();
 
-      port.deleteEvent(makeOwnCalendarRef(), 'event-id');
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to delete event event-id'),
+      expect(() => port.deleteEvent(makeOwnCalendarRef(), 'event-id')).toThrow(
+        deleteError,
       );
+      expect(consoleSpy).not.toHaveBeenCalled();
       consoleSpy.mockRestore();
     });
 
-    it('does nothing when the event is not found', () => {
-      const calendar = makeCalendar(null);
+    it('is a no-op when the event is not found', () => {
+      const getEventById = jest.fn((_id: string) => null);
+      const calendar = {
+        getEvents: jest.fn(),
+        getEventById,
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
       setupCalendarApp(calendar);
       const port = new CalendarAppCalendarPort();
 
       expect(() =>
         port.deleteEvent(makeOwnCalendarRef(), 'missing-id'),
       ).not.toThrow();
+      expect(getEventById).toHaveBeenCalledWith('missing-id');
     });
 
     it('calls deleteEvent on the found event', () => {
@@ -259,83 +340,6 @@ describe('CalendarAppCalendarPort', () => {
       port.deleteEvent(makeHubCalendarRef(), 'event-2');
 
       expect(getCalendarById).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('createHoldPlaceholder', () => {
-    it('does not call setTransparency on the created event', () => {
-      const placeholder = new HoldPlaceholder(
-        'HOLD test',
-        new Date('2020-01-01T09:00:00Z'),
-        new Date('2020-01-01T10:00:00Z'),
-      );
-      const createdEvent = {
-        removeAllReminders: jest.fn(),
-        setTransparency: jest.fn(),
-      } as unknown as GoogleAppsScript.Calendar.CalendarEvent;
-      const calendar = {
-        getEventById: jest.fn(),
-        createEvent: jest.fn(() => createdEvent),
-      } as unknown as GoogleAppsScript.Calendar.Calendar;
-      setupCalendarApp(calendar);
-      const port = new CalendarAppCalendarPort();
-
-      port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder);
-
-      expect(createdEvent.setTransparency).not.toHaveBeenCalled();
-    });
-
-    it('does not throw when createEvent throws', () => {
-      const placeholder = new HoldPlaceholder(
-        'HOLD test',
-        new Date('2020-01-01T09:00:00Z'),
-        new Date('2020-01-01T10:00:00Z'),
-      );
-      const calendar = {
-        getEventById: jest.fn(),
-        createEvent: jest.fn(() => {
-          throw new Error(
-            'You have been creating or deleting too many calendars or calendar events in a short time',
-          );
-        }),
-      } as unknown as GoogleAppsScript.Calendar.Calendar;
-      setupCalendarApp(calendar);
-      const port = new CalendarAppCalendarPort();
-
-      expect(() =>
-        port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder),
-      ).not.toThrow();
-    });
-
-    it('logs an error to console.error when createEvent throws', () => {
-      const consoleSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-      const placeholder = new HoldPlaceholder(
-        'HOLD test',
-        new Date('2020-01-01T09:00:00Z'),
-        new Date('2020-01-01T10:00:00Z'),
-      );
-      const calendar = {
-        getEventById: jest.fn(),
-        createEvent: jest.fn(() => {
-          throw new Error(
-            'You have been creating or deleting too many calendars or calendar events in a short time',
-          );
-        }),
-      } as unknown as GoogleAppsScript.Calendar.Calendar;
-      setupCalendarApp(calendar);
-      const port = new CalendarAppCalendarPort();
-
-      port.createHoldPlaceholder(makeOwnCalendarRef(), placeholder);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to create hold placeholder'),
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining(placeholder.title),
-      );
-      consoleSpy.mockRestore();
     });
   });
 

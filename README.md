@@ -18,7 +18,7 @@ now + `SYNC_DAYS` days:
   and end collapse to one placeholder. Placeholders in the legacy format
   `[HOLD] {ownDomain} {originalTitle}` are removed by the next run, and the
   new-format placeholder is created in their place.
-  Placeholders have their reminders removed and are marked busy (opaque).
+  Each placeholder is created with reminders off and marked busy (opaque).
 - Pull: for each hub timed event, skipping all-day events, this domain's own
   holds, and declined events, a `[HOLD]` placeholder is reconciled onto the
   account's own calendar. When the hub event title contains the configured
@@ -29,6 +29,22 @@ Reconciliation deletes stale placeholders and creates missing ones; the
 deduplication key is start time, end time, and title. On the hub, when several
 placeholders of this account share one key, the copy with the smallest event id
 is kept and every other copy is deleted, whether or not the key is still desired.
+
+Reminders are checked on every run, through the reminders field of each managed
+placeholder (its own pull placeholders and this account's hub push
+placeholders), read with the advanced Calendar service v3, which the manifest
+`src/appsscript.json` enables as `Calendar`. A placeholder is invalid when it has
+no `reminders` object, when `useDefault` is not `false`, or when `overrides` is
+not empty. Each run deletes every invalid managed placeholder that it is not
+already deleting, then recreates it with the same title, start and end. Every
+placeholder is created by one `Calendar.Events.insert` whose body sets
+`reminders: { useDefault: false, overrides: [] }` and `transparency: 'opaque'`,
+so no placeholder is left with default reminders. The manifest also pins `oauthScopes` to the three scopes the client projects already grant (`script.scriptapp`, `userinfo.email` and `calendar`), so Apps Script cannot auto-detect another scope for the advanced service.
+
+Each delete or create that fails is collected rather than skipped silently: the
+remaining operations still run, a placeholder whose delete failed is not
+recreated, and the run ends by throwing one error that names every failed item,
+so the Apps Script execution is recorded as failed.
 
 Each run holds the Apps Script script lock for its whole duration. A run that
 cannot acquire the lock within one second logs a message and skips; the next

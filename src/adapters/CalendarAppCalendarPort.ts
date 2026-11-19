@@ -1,7 +1,6 @@
 import { CalendarEvent } from '../domain/entities/CalendarEvent';
 import { CalendarEventColor } from '../domain/entities/CalendarEventColor';
 import { CalendarRef } from '../domain/entities/CalendarRef';
-import { HoldPlaceholder } from '../domain/entities/HoldPlaceholder';
 import { CalendarPort } from '../domain/usecases/adapter-interfaces/CalendarPort';
 
 export class CalendarAppCalendarPort implements CalendarPort {
@@ -49,36 +48,10 @@ export class CalendarAppCalendarPort implements CalendarPort {
     return events;
   }
 
-  createHoldPlaceholder(
-    calendar: CalendarRef,
-    placeholder: HoldPlaceholder,
-  ): void {
-    try {
-      const event = this.resolve(calendar).createEvent(
-        placeholder.title,
-        placeholder.startAt,
-        placeholder.endAt,
-      );
-      event.removeAllReminders();
-    } catch (error) {
-      console.error(
-        `Failed to create hold placeholder ${placeholder.title}: ${String(error)}`,
-      );
-    }
-  }
-
   deleteEvent(calendar: CalendarRef, eventId: string): void {
-    const cachedEvent = this.gasEventCache.get(eventId);
-    const event =
-      cachedEvent !== undefined
-        ? cachedEvent
-        : this.resolve(calendar).getEventById(eventId);
+    const event = this.findEventIfExists(calendar, eventId);
     if (event !== null) {
-      try {
-        event.deleteEvent();
-      } catch (error) {
-        console.error(`Failed to delete event ${eventId}: ${String(error)}`);
-      }
+      event.deleteEvent();
     }
   }
 
@@ -103,6 +76,16 @@ export class CalendarAppCalendarPort implements CalendarPort {
         );
       }
     }
+  }
+
+  private findEventIfExists(
+    calendar: CalendarRef,
+    eventId: string,
+  ): GoogleAppsScript.Calendar.CalendarEvent | null {
+    const cachedEvent = this.gasEventCache.get(eventId);
+    return cachedEvent !== undefined
+      ? cachedEvent
+      : this.resolve(calendar).getEventById(eventId);
   }
 
   private resolve(calendar: CalendarRef): GoogleAppsScript.Calendar.Calendar {
