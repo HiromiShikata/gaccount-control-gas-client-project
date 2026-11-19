@@ -271,54 +271,43 @@ describe('CalendarAppCalendarPort', () => {
       expect(gasEvent.deleteEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('does not throw when deleteEvent throws because the event was already deleted', () => {
-      const alreadyDeletedEvent = makeEvent({
-        deleteEvent: () => {
-          throw new Error(
-            'The calendar event does not exist, or it has already been deleted.',
-          );
-        },
-      });
-      const calendar = makeCalendar(alreadyDeletedEvent);
-      setupCalendarApp(calendar);
-      const port = new CalendarAppCalendarPort();
-
-      expect(() =>
-        port.deleteEvent(makeOwnCalendarRef(), 'event-id'),
-      ).not.toThrow();
-    });
-
-    it('logs an error to console.error when deleteEvent throws', () => {
+    it('propagates an error thrown by deleteEvent unchanged, without logging it', () => {
       const consoleSpy = jest
         .spyOn(console, 'error')
         .mockImplementation(() => {});
-      const alreadyDeletedEvent = makeEvent({
+      const deleteError = new Error(
+        'The calendar event does not exist, or it has already been deleted.',
+      );
+      const event = makeEvent({
         deleteEvent: () => {
-          throw new Error(
-            'The calendar event does not exist, or it has already been deleted.',
-          );
+          throw deleteError;
         },
       });
-      const calendar = makeCalendar(alreadyDeletedEvent);
+      const calendar = makeCalendar(event);
       setupCalendarApp(calendar);
       const port = new CalendarAppCalendarPort();
 
-      port.deleteEvent(makeOwnCalendarRef(), 'event-id');
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to delete event event-id'),
+      expect(() => port.deleteEvent(makeOwnCalendarRef(), 'event-id')).toThrow(
+        deleteError,
       );
+      expect(consoleSpy).not.toHaveBeenCalled();
       consoleSpy.mockRestore();
     });
 
-    it('does nothing when the event is not found', () => {
-      const calendar = makeCalendar(null);
+    it('is a no-op when the event is not found', () => {
+      const getEventById = jest.fn((_id: string) => null);
+      const calendar = {
+        getEvents: jest.fn(),
+        getEventById,
+        createEvent: jest.fn(),
+      } as unknown as GoogleAppsScript.Calendar.Calendar;
       setupCalendarApp(calendar);
       const port = new CalendarAppCalendarPort();
 
       expect(() =>
         port.deleteEvent(makeOwnCalendarRef(), 'missing-id'),
       ).not.toThrow();
+      expect(getEventById).toHaveBeenCalledWith('missing-id');
     });
 
     it('calls deleteEvent on the found event', () => {
