@@ -2,7 +2,7 @@ import { CalendarRef } from '../../entities/CalendarRef';
 import { HoldPlaceholder } from '../../entities/HoldPlaceholder';
 
 export interface HoldPlaceholderPort {
-  listEventIdsWithInvalidReminders(
+  listICalUidsWithInvalidReminders(
     calendar: CalendarRef,
     from: Date,
     to: Date,

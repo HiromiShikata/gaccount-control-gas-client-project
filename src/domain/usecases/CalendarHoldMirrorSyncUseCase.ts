@@ -60,13 +60,27 @@ export class CalendarHoldMirrorSyncUseCase {
     );
     const ownEvents = this.calendarPort.listTimedEvents(own, from, to);
     const hubEvents = this.calendarPort.listTimedEvents(hub, from, to);
-    const invalidOwnIds = new Set(
-      this.holdPlaceholderPort.listEventIdsWithInvalidReminders(own, from, to),
-    );
-    const invalidHubIds = new Set(
-      this.holdPlaceholderPort.listEventIdsWithInvalidReminders(hub, from, to),
-    );
     const failures = new CalendarSyncFailureCollector();
+    let invalidOwnIds: ReadonlySet<string> = new Set<string>();
+    failures.attempt('list own invalid reminders', () => {
+      invalidOwnIds = new Set(
+        this.holdPlaceholderPort.listICalUidsWithInvalidReminders(
+          own,
+          from,
+          to,
+        ),
+      );
+    });
+    let invalidHubIds: ReadonlySet<string> = new Set<string>();
+    failures.attempt('list hub invalid reminders', () => {
+      invalidHubIds = new Set(
+        this.holdPlaceholderPort.listICalUidsWithInvalidReminders(
+          hub,
+          from,
+          to,
+        ),
+      );
+    });
     const pendingCreates: PendingCreate[] = [];
     this.pushToHub(
       hub,
@@ -87,7 +101,9 @@ export class CalendarHoldMirrorSyncUseCase {
       failures,
       pendingCreates,
     );
-    this.createPlaceholders(pendingCreates, failures);
+    for (const { calendar, label, placeholder } of pendingCreates) {
+      this.createPlaceholder(calendar, label, placeholder, failures);
+    }
     failures.throwIfAny();
   }
 
@@ -169,8 +185,14 @@ export class CalendarHoldMirrorSyncUseCase {
       desired,
       kept,
     );
-    for (const placeholder of [...toDelete, ...duplicates]) {
+    for (const placeholder of toDelete) {
       this.deletePlaceholder(side, placeholder, failures);
+    }
+    const failedDuplicateKeys = new Set<string>();
+    for (const placeholder of duplicates) {
+      if (!this.deletePlaceholder(side, placeholder, failures)) {
+        failedDuplicateKeys.add(placeholder.dedupKey());
+      }
     }
     for (const placeholder of toCreate) {
       pendingCreates.push({
@@ -181,20 +203,24 @@ export class CalendarHoldMirrorSyncUseCase {
     }
     const deletingIds = new Set(toDelete.map((placeholder) => placeholder.id));
     for (const placeholder of kept) {
-      if (deletingIds.has(placeholder.id) || !invalidIds.has(placeholder.id)) {
+      if (
+        deletingIds.has(placeholder.id) ||
+        !invalidIds.has(placeholder.id) ||
+        failedDuplicateKeys.has(placeholder.dedupKey())
+      ) {
         continue;
       }
-      const deleted = this.deletePlaceholder(side, placeholder, failures);
-      if (deleted) {
-        pendingCreates.push({
-          calendar: side.calendar,
-          label: `recreate ${side.calendarLabel} placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
-          placeholder: new HoldPlaceholder(
+      if (this.deletePlaceholder(side, placeholder, failures)) {
+        this.createPlaceholder(
+          side.calendar,
+          `recreate ${side.calendarLabel} placeholder "${placeholder.title}"${this.describeWindow(placeholder)}`,
+          new HoldPlaceholder(
             placeholder.title,
             placeholder.startAt,
             placeholder.endAt,
           ),
-        });
+          failures,
+        );
       }
     }
   }
@@ -210,15 +236,15 @@ export class CalendarHoldMirrorSyncUseCase {
     );
   }
 
-  private createPlaceholders(
-    pendingCreates: PendingCreate[],
+  private createPlaceholder(
+    calendar: CalendarRef,
+    label: string,
+    placeholder: HoldPlaceholder,
     failures: CalendarSyncFailureCollector,
   ): void {
-    for (const { calendar, label, placeholder } of pendingCreates) {
-      failures.attempt(label, () =>
-        this.holdPlaceholderPort.createHoldPlaceholder(calendar, placeholder),
-      );
-    }
+    failures.attempt(label, () =>
+      this.holdPlaceholderPort.createHoldPlaceholder(calendar, placeholder),
+    );
   }
 
   private describeWindow(

@@ -21,7 +21,7 @@ const resolveCalendarId = (calendar: CalendarRef): string =>
   calendar.type === 'own' ? PRIMARY_CALENDAR_ID : calendar.hubCalendarId;
 
 const advancedCalendarService = (): GoogleAppsScript.Calendar => {
-  if (Calendar === undefined) {
+  if (typeof Calendar === 'undefined') {
     throw new Error(
       'The advanced Calendar service is not enabled in the Apps Script manifest',
     );
@@ -30,7 +30,7 @@ const advancedCalendarService = (): GoogleAppsScript.Calendar => {
 };
 
 export class GoogleCalendarApiHoldPlaceholderPort implements HoldPlaceholderPort {
-  listEventIdsWithInvalidReminders(
+  listICalUidsWithInvalidReminders(
     calendar: CalendarRef,
     from: Date,
     to: Date,
