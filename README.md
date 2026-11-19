@@ -39,7 +39,7 @@ not empty. Each run deletes every invalid managed placeholder that it is not
 already deleting, then recreates it with the same title, start and end. Every
 placeholder is created by one `Calendar.Events.insert` whose body sets
 `reminders: { useDefault: false, overrides: [] }` and `transparency: 'opaque'`,
-so no placeholder is left with default reminders.
+so no placeholder is left with default reminders. The manifest also pins `oauthScopes` to the three scopes the client projects already grant (`script.scriptapp`, `userinfo.email` and `calendar`), so Apps Script cannot auto-detect another scope for the advanced service.
 
 Each delete or create that fails is collected rather than skipped silently: the
 remaining operations still run, a placeholder whose delete failed is not

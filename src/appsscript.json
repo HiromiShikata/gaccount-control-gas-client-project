@@ -1,5 +1,10 @@
 {
   "timeZone": "Etc/UTC",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/calendar"
+  ],
   "dependencies": {
     "enabledAdvancedServices": [
       {
