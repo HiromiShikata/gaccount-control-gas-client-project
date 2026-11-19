@@ -59,7 +59,7 @@ const createMocks = (
     ),
   };
   const holdPlaceholderPort = {
-    listEventIdsWithInvalidReminders: jest.fn(
+    listICalUidsWithInvalidReminders: jest.fn(
       (calendar: CalendarRef, _from: Date, _to: Date): string[] =>
         calendar.type === 'own' ? invalidIds.own : invalidIds.hub,
     ),
@@ -154,7 +154,7 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
 
       expect(calendarPort.listTimedEvents.mock.calls).toEqual([]);
       expect(
-        holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+        holdPlaceholderPort.listICalUidsWithInvalidReminders.mock.calls,
       ).toEqual([]);
       expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
       expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
@@ -172,7 +172,7 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
 
       expect(calendarPort.listTimedEvents.mock.calls).toEqual([]);
       expect(
-        holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+        holdPlaceholderPort.listICalUidsWithInvalidReminders.mock.calls,
       ).toEqual([]);
       expect(logPort.error.mock.calls.length).toBe(1);
     });
@@ -186,7 +186,7 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
 
       expect(calendarPort.listTimedEvents.mock.calls).toEqual([]);
       expect(
-        holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+        holdPlaceholderPort.listICalUidsWithInvalidReminders.mock.calls,
       ).toEqual([]);
       expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
       expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
@@ -315,7 +315,7 @@ describe('CalendarHoldMirrorSyncUseCase invalid reminders on managed placeholder
     useCase.execute(NOW, OWN_DOMAIN);
 
     expect(
-      holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+      holdPlaceholderPort.listICalUidsWithInvalidReminders.mock.calls,
     ).toEqual(
       expect.arrayContaining([
         [OWN, NOW, WINDOW_END],
@@ -323,7 +323,7 @@ describe('CalendarHoldMirrorSyncUseCase invalid reminders on managed placeholder
       ]),
     );
     expect(
-      holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+      holdPlaceholderPort.listICalUidsWithInvalidReminders.mock.calls,
     ).toHaveLength(2);
   });
 
@@ -561,5 +561,310 @@ describe('CalendarHoldMirrorSyncUseCase invalid reminders on managed placeholder
 
     expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/stale-hold/);
     expect(holdPlaceholderPort.createHoldPlaceholder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CalendarHoldMirrorSyncUseCase listing failures', () => {
+  const OWN_HOLD_TITLE = `${HOLD_TAG} ${OWN_DOMAIN}`;
+  const LATER_START = new Date('2020-01-03T10:00:00Z');
+  const LATER_END = new Date('2020-01-03T11:00:00Z');
+
+  const failingListingCases: {
+    name: string;
+    failingType: CalendarRef['type'];
+    ownEvents: CalendarEvent[];
+    hubEvents: CalendarEvent[];
+    expectedDeletes: unknown[][];
+    expectedCreates: unknown[][];
+    expectedMessage: RegExp;
+  }[] = [
+    {
+      name: 'the own listing throws',
+      failingType: 'own',
+      ownEvents: [
+        event('own-standup', 'Standup', START, END),
+        event('own-hold', HOLD_TAG, MEETING_START, MEETING_END),
+      ],
+      hubEvents: [
+        event('hub-external', 'External Sync', MEETING_START, MEETING_END),
+        event('hub-external-later', 'External Two', LATER_START, LATER_END),
+        event('hub-stale', `${OWN_HOLD_TITLE} Gone`, STALE_START, STALE_END),
+      ],
+      expectedDeletes: [[HUB, 'hub-stale']],
+      expectedCreates: [
+        [HUB, new HoldPlaceholder(OWN_HOLD_TITLE, START, END)],
+        [OWN, new HoldPlaceholder(HOLD_TAG, LATER_START, LATER_END)],
+      ],
+      expectedMessage: /list own invalid reminders: boom-own/,
+    },
+    {
+      name: 'the hub listing throws',
+      failingType: 'hub',
+      ownEvents: [
+        event('own-standup', 'Standup', START, END),
+        event('own-review', 'Review', MEETING_START, MEETING_END),
+      ],
+      hubEvents: [
+        event('hub-placeholder', OWN_HOLD_TITLE, MEETING_START, MEETING_END),
+        event('hub-stale', `${OWN_HOLD_TITLE} Gone`, STALE_START, STALE_END),
+        event('hub-external-later', 'External Two', LATER_START, LATER_END),
+      ],
+      expectedDeletes: [[HUB, 'hub-stale']],
+      expectedCreates: [
+        [HUB, new HoldPlaceholder(OWN_HOLD_TITLE, START, END)],
+        [OWN, new HoldPlaceholder(HOLD_TAG, LATER_START, LATER_END)],
+      ],
+      expectedMessage: /list hub invalid reminders: boom-hub/,
+    },
+  ];
+
+  it.each(failingListingCases)(
+    'when $name, reconciles the other side, recreates nothing on the failed side, and throws an error naming the listing',
+    ({
+      failingType,
+      ownEvents,
+      hubEvents,
+      expectedDeletes,
+      expectedCreates,
+      expectedMessage,
+    }) => {
+      const { useCase, calendarPort, holdPlaceholderPort } = createMocks({
+        own: ownEvents,
+        hub: hubEvents,
+      });
+      holdPlaceholderPort.listICalUidsWithInvalidReminders.mockImplementation(
+        (calendar: CalendarRef): string[] => {
+          if (calendar.type === failingType) {
+            throw new Error(`boom-${failingType}`);
+          }
+          return [];
+        },
+      );
+
+      expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(expectedMessage);
+      expect(calendarPort.deleteEvent.mock.calls).toEqual(expectedDeletes);
+      expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toHaveLength(
+        expectedCreates.length,
+      );
+      expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual(
+        expect.arrayContaining(expectedCreates),
+      );
+    },
+  );
+});
+
+describe('CalendarHoldMirrorSyncUseCase recreation order', () => {
+  const OWN_HOLD_TITLE = `${HOLD_TAG} ${OWN_DOMAIN}`;
+  const LATER_START = new Date('2020-01-03T10:00:00Z');
+  const LATER_END = new Date('2020-01-03T11:00:00Z');
+
+  const recordCalls = (
+    {
+      calendarPort,
+      holdPlaceholderPort,
+    }: Pick<
+      ReturnType<typeof createMocks>,
+      'calendarPort' | 'holdPlaceholderPort'
+    >,
+    failingEventId?: string,
+  ): unknown[][] => {
+    const calls: unknown[][] = [];
+    calendarPort.deleteEvent.mockImplementation(
+      (calendar: CalendarRef, eventId: string): void => {
+        calls.push(['deleteEvent', calendar, eventId]);
+        if (eventId === failingEventId) {
+          throw new Error(`delete of ${eventId} failed`);
+        }
+      },
+    );
+    holdPlaceholderPort.createHoldPlaceholder.mockImplementation(
+      (calendar: CalendarRef, placeholder: HoldPlaceholder): void => {
+        calls.push(['createHoldPlaceholder', calendar, placeholder]);
+      },
+    );
+    return calls;
+  };
+
+  it('deletes and recreates each invalid kept hub placeholder before moving to the next one', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-standup', 'Standup', START, END),
+          event('own-review', 'Review', MEETING_START, MEETING_END),
+        ],
+        hub: [
+          event('hub-x', OWN_HOLD_TITLE, START, END),
+          event('hub-y', OWN_HOLD_TITLE, MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: [], hub: ['hub-x', 'hub-y'] } },
+    );
+    const calls = recordCalls({ calendarPort, holdPlaceholderPort });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calls).toEqual([
+      ['deleteEvent', HUB, 'hub-x'],
+      [
+        'createHoldPlaceholder',
+        HUB,
+        new HoldPlaceholder(OWN_HOLD_TITLE, START, END),
+      ],
+      ['deleteEvent', HUB, 'hub-y'],
+      [
+        'createHoldPlaceholder',
+        HUB,
+        new HoldPlaceholder(OWN_HOLD_TITLE, MEETING_START, MEETING_END),
+      ],
+    ]);
+  });
+
+  it('deletes and recreates each invalid kept own pull placeholder before moving to the next one', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-hold-x', HOLD_TAG, START, END),
+          event('own-hold-y', HOLD_TAG, MEETING_START, MEETING_END),
+        ],
+        hub: [
+          event('hub-external', 'External Sync', START, END),
+          event('hub-external-two', 'External Two', MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: ['own-hold-x', 'own-hold-y'], hub: [] } },
+    );
+    const calls = recordCalls({ calendarPort, holdPlaceholderPort });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calls).toEqual([
+      ['deleteEvent', OWN, 'own-hold-x'],
+      ['createHoldPlaceholder', OWN, new HoldPlaceholder(HOLD_TAG, START, END)],
+      ['deleteEvent', OWN, 'own-hold-y'],
+      [
+        'createHoldPlaceholder',
+        OWN,
+        new HoldPlaceholder(HOLD_TAG, MEETING_START, MEETING_END),
+      ],
+    ]);
+  });
+
+  it('still creates a desired placeholder that is absent while recreating an invalid kept one immediately after its delete', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [event('own-hold-x', HOLD_TAG, START, END)],
+        hub: [
+          event('hub-external', 'External Sync', START, END),
+          event('hub-external-later', 'External Two', LATER_START, LATER_END),
+        ],
+      },
+      { invalidIds: { own: ['own-hold-x'], hub: [] } },
+    );
+    const calls = recordCalls({ calendarPort, holdPlaceholderPort });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    const recreationSteps = calls.filter(
+      (call) =>
+        call[2] === 'own-hold-x' ||
+        (call[2] instanceof HoldPlaceholder &&
+          call[2].startAt.getTime() === START.getTime()),
+    );
+    expect(recreationSteps).toEqual([
+      ['deleteEvent', OWN, 'own-hold-x'],
+      ['createHoldPlaceholder', OWN, new HoldPlaceholder(HOLD_TAG, START, END)],
+    ]);
+    expect(calls).toContainEqual([
+      'createHoldPlaceholder',
+      OWN,
+      new HoldPlaceholder(HOLD_TAG, LATER_START, LATER_END),
+    ]);
+  });
+
+  it('does not recreate an invalid kept hub placeholder whose delete fails, still deletes and recreates the next one, and names the failed delete', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-standup', 'Standup', START, END),
+          event('own-review', 'Review', MEETING_START, MEETING_END),
+        ],
+        hub: [
+          event('hub-x', OWN_HOLD_TITLE, START, END),
+          event('hub-y', OWN_HOLD_TITLE, MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: [], hub: ['hub-x', 'hub-y'] } },
+    );
+    const calls = recordCalls({ calendarPort, holdPlaceholderPort }, 'hub-x');
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/hub-x/);
+    expect(calls).toEqual([
+      ['deleteEvent', HUB, 'hub-x'],
+      ['deleteEvent', HUB, 'hub-y'],
+      [
+        'createHoldPlaceholder',
+        HUB,
+        new HoldPlaceholder(OWN_HOLD_TITLE, MEETING_START, MEETING_END),
+      ],
+    ]);
+  });
+});
+
+describe('CalendarHoldMirrorSyncUseCase duplicate delete failures', () => {
+  const OWN_HOLD_TITLE = `${HOLD_TAG} ${OWN_DOMAIN}`;
+  const LATER_START = new Date('2020-01-03T10:00:00Z');
+  const LATER_END = new Date('2020-01-03T11:00:00Z');
+
+  it('does not delete or recreate the kept invalid placeholder when deleting its duplicate fails, and still runs the other items', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [event('own-standup', 'Standup', START, END)],
+        hub: [
+          event('hub-placeholder-a', OWN_HOLD_TITLE, START, END),
+          event('hub-placeholder-b', OWN_HOLD_TITLE, START, END),
+          event('hub-external-later', 'External Two', LATER_START, LATER_END),
+        ],
+      },
+      { invalidIds: { own: [], hub: ['hub-placeholder-a'] } },
+    );
+    const calls = recordCalls(
+      { calendarPort, holdPlaceholderPort },
+      'hub-placeholder-b',
+    );
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/hub-placeholder-b/);
+    expect(calls).toEqual([
+      ['deleteEvent', HUB, 'hub-placeholder-b'],
+      [
+        'createHoldPlaceholder',
+        OWN,
+        new HoldPlaceholder(HOLD_TAG, LATER_START, LATER_END),
+      ],
+    ]);
+  });
+
+  it('deletes the duplicate, then deletes and recreates the kept invalid placeholder, when the duplicate delete succeeds', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [event('own-standup', 'Standup', START, END)],
+        hub: [
+          event('hub-placeholder-a', OWN_HOLD_TITLE, START, END),
+          event('hub-placeholder-b', OWN_HOLD_TITLE, START, END),
+        ],
+      },
+      { invalidIds: { own: [], hub: ['hub-placeholder-a'] } },
+    );
+    const calls = recordCalls({ calendarPort, holdPlaceholderPort });
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).not.toThrow();
+    expect(calls).toEqual([
+      ['deleteEvent', HUB, 'hub-placeholder-b'],
+      ['deleteEvent', HUB, 'hub-placeholder-a'],
+      [
+        'createHoldPlaceholder',
+        HUB,
+        new HoldPlaceholder(OWN_HOLD_TITLE, START, END),
+      ],
+    ]);
   });
 });

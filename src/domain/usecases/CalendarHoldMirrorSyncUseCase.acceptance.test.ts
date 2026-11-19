@@ -97,7 +97,7 @@ class InMemoryHoldPlaceholderPort implements HoldPlaceholderPort {
     placeholder: HoldPlaceholder;
   }[] = [];
 
-  listEventIdsWithInvalidReminders(): string[] {
+  listICalUidsWithInvalidReminders(): string[] {
     return [];
   }
 

@@ -65,7 +65,7 @@ describe('hasInvalidReminders', () => {
 });
 
 describe('GoogleCalendarApiHoldPlaceholderPort', () => {
-  describe('listEventIdsWithInvalidReminders', () => {
+  describe('listICalUidsWithInvalidReminders', () => {
     it('requests the window with singleEvents and the reminder fields, and sends no pageToken on the first call', () => {
       const list = jest.fn(
         (_calendarId: string, _options: Record<string, unknown>) => ({
@@ -75,7 +75,7 @@ describe('GoogleCalendarApiHoldPlaceholderPort', () => {
       installCalendarService({ list });
       const port = new GoogleCalendarApiHoldPlaceholderPort();
 
-      port.listEventIdsWithInvalidReminders(OWN, FROM, TO);
+      port.listICalUidsWithInvalidReminders(OWN, FROM, TO);
 
       expect(list).toHaveBeenCalledTimes(1);
       const [calendarId, options] = list.mock.calls[0];
@@ -107,7 +107,7 @@ describe('GoogleCalendarApiHoldPlaceholderPort', () => {
         installCalendarService({ list });
         const port = new GoogleCalendarApiHoldPlaceholderPort();
 
-        port.listEventIdsWithInvalidReminders(calendar, FROM, TO);
+        port.listICalUidsWithInvalidReminders(calendar, FROM, TO);
 
         expect(list.mock.calls[0][0]).toBe(expectedCalendarId);
       },
@@ -143,7 +143,7 @@ describe('GoogleCalendarApiHoldPlaceholderPort', () => {
       installCalendarService({ list });
       const port = new GoogleCalendarApiHoldPlaceholderPort();
 
-      const ids = port.listEventIdsWithInvalidReminders(OWN, FROM, TO);
+      const ids = port.listICalUidsWithInvalidReminders(OWN, FROM, TO);
 
       expect(ids).toEqual(['ical-1', 'ical-3', 'ical-4']);
       expect(list).toHaveBeenCalledTimes(2);
@@ -170,7 +170,7 @@ describe('GoogleCalendarApiHoldPlaceholderPort', () => {
       installCalendarService({ list });
       const port = new GoogleCalendarApiHoldPlaceholderPort();
 
-      expect(port.listEventIdsWithInvalidReminders(OWN, FROM, TO)).toEqual([]);
+      expect(port.listICalUidsWithInvalidReminders(OWN, FROM, TO)).toEqual([]);
     });
 
     it('throws when a listed event has no iCalUID', () => {
@@ -183,7 +183,7 @@ describe('GoogleCalendarApiHoldPlaceholderPort', () => {
       const port = new GoogleCalendarApiHoldPlaceholderPort();
 
       expect(() =>
-        port.listEventIdsWithInvalidReminders(OWN, FROM, TO),
+        port.listICalUidsWithInvalidReminders(OWN, FROM, TO),
       ).toThrow(Error);
     });
 
@@ -198,7 +198,7 @@ describe('GoogleCalendarApiHoldPlaceholderPort', () => {
       const port = new GoogleCalendarApiHoldPlaceholderPort();
 
       expect(() =>
-        port.listEventIdsWithInvalidReminders(OWN, FROM, TO),
+        port.listICalUidsWithInvalidReminders(OWN, FROM, TO),
       ).toThrow(listError);
     });
   });
@@ -258,4 +258,57 @@ describe('GoogleCalendarApiHoldPlaceholderPort', () => {
       ).toThrow(insertError);
     });
   });
+});
+
+describe('GoogleCalendarApiHoldPlaceholderPort without the advanced Calendar service', () => {
+  let hadCalendar = false;
+  let savedCalendar: unknown;
+
+  beforeEach(() => {
+    const globalRecord = globalThis as unknown as Record<string, unknown>;
+    hadCalendar = 'Calendar' in globalRecord;
+    savedCalendar = globalRecord.Calendar;
+    delete globalRecord.Calendar;
+  });
+
+  afterEach(() => {
+    const globalRecord = globalThis as unknown as Record<string, unknown>;
+    if (hadCalendar) {
+      globalRecord.Calendar = savedCalendar;
+    } else {
+      delete globalRecord.Calendar;
+    }
+  });
+
+  it.each([
+    {
+      name: 'listICalUidsWithInvalidReminders',
+      call: (port: GoogleCalendarApiHoldPlaceholderPort): unknown =>
+        port.listICalUidsWithInvalidReminders(OWN, FROM, TO),
+    },
+    {
+      name: 'createHoldPlaceholder',
+      call: (port: GoogleCalendarApiHoldPlaceholderPort): unknown =>
+        port.createHoldPlaceholder(
+          OWN,
+          new HoldPlaceholder('[HOLD]', START, END),
+        ),
+    },
+  ])(
+    '$name throws an Error naming the advanced Calendar service instead of a ReferenceError',
+    ({ call }) => {
+      const port = new GoogleCalendarApiHoldPlaceholderPort();
+      let caught: unknown;
+
+      try {
+        call(port);
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBeInstanceOf(ReferenceError);
+      expect((caught as Error).message).toContain('advanced Calendar service');
+    },
+  );
 });
