@@ -808,6 +808,76 @@ describe('CalendarHoldMirrorSyncUseCase recreation order', () => {
       ],
     ]);
   });
+
+  it('runs the hub side as deletes, then desired creates, then delete and recreate of each invalid kept placeholder', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-invalid', 'Standup', START, END),
+          event('own-desired', 'Review', MEETING_START, MEETING_END),
+        ],
+        hub: [
+          event('hub-stale', OWN_HOLD_TITLE, STALE_START, STALE_END),
+          event('hub-invalid', OWN_HOLD_TITLE, START, END),
+        ],
+      },
+      { invalidIds: { own: [], hub: ['hub-invalid'] } },
+    );
+    const calls = recordCalls({ calendarPort, holdPlaceholderPort });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calls).toEqual([
+      ['deleteEvent', HUB, 'hub-stale'],
+      [
+        'createHoldPlaceholder',
+        HUB,
+        new HoldPlaceholder(OWN_HOLD_TITLE, MEETING_START, MEETING_END),
+      ],
+      ['deleteEvent', HUB, 'hub-invalid'],
+      [
+        'createHoldPlaceholder',
+        HUB,
+        new HoldPlaceholder(OWN_HOLD_TITLE, START, END),
+      ],
+    ]);
+  });
+
+  it('runs the own side as deletes, then desired creates, then delete and recreate of each invalid kept placeholder, after the hub side', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-standup', 'Standup', LATER_START, LATER_END),
+          event('own-stale', HOLD_TAG, STALE_START, STALE_END),
+          event('own-invalid', HOLD_TAG, START, END),
+        ],
+        hub: [
+          event('hub-start', 'External Sync', START, END),
+          event('hub-meeting', 'External Two', MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: ['own-invalid'], hub: [] } },
+    );
+    const calls = recordCalls({ calendarPort, holdPlaceholderPort });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calls).toEqual([
+      [
+        'createHoldPlaceholder',
+        HUB,
+        new HoldPlaceholder(OWN_HOLD_TITLE, LATER_START, LATER_END),
+      ],
+      ['deleteEvent', OWN, 'own-stale'],
+      [
+        'createHoldPlaceholder',
+        OWN,
+        new HoldPlaceholder(HOLD_TAG, MEETING_START, MEETING_END),
+      ],
+      ['deleteEvent', OWN, 'own-invalid'],
+      ['createHoldPlaceholder', OWN, new HoldPlaceholder(HOLD_TAG, START, END)],
+    ]);
+  });
 });
 
 describe('CalendarHoldMirrorSyncUseCase duplicate delete failures', () => {
