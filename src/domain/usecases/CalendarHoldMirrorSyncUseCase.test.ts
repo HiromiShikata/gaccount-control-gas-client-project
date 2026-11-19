@@ -1,49 +1,70 @@
 import { CalendarEvent } from '../entities/CalendarEvent';
-import { CalendarEventColor } from '../entities/CalendarEventColor';
 import { CalendarRef } from '../entities/CalendarRef';
 import { HoldPlaceholder } from '../entities/HoldPlaceholder';
 import { HOLD_TAG } from '../entities/HoldPlaceholderReconciliation';
-import {
-  CalendarHoldMirrorSyncUseCase,
-  MAX_REMINDER_REPAIRS_PER_RUN,
-} from './CalendarHoldMirrorSyncUseCase';
+import { CalendarHoldMirrorSyncUseCase } from './CalendarHoldMirrorSyncUseCase';
 
 const OWN_DOMAIN = 'example.com';
 const HUB_CALENDAR_ID = 'hub-calendar-id';
 const NOW = new Date('2020-01-01T00:00:00Z');
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const SYNC_DAYS = 90;
+const WINDOW_END = new Date(NOW.getTime() + SYNC_DAYS * MILLISECONDS_PER_DAY);
+const OWN: CalendarRef = { type: 'own' };
+const HUB: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
+
+const START = new Date('2020-01-01T09:00:00Z');
+const END = new Date('2020-01-01T09:30:00Z');
+const MEETING_START = new Date('2020-01-02T10:00:00Z');
+const MEETING_END = new Date('2020-01-02T11:00:00Z');
+const STALE_START = new Date('2020-01-05T00:00:00Z');
+const STALE_END = new Date('2020-01-05T00:30:00Z');
 
 const CONFIG: Record<string, string> = {
   HUB_CALENDAR_ID,
-  SYNC_DAYS: '90',
+  SYNC_DAYS: String(SYNC_DAYS),
   MEETING_OK_TAG: '#meeting-ok',
   MEETING_OK_TITLE: 'Available for meeting',
 };
 
+type InvalidReminderIds = { own: string[]; hub: string[] };
+
+const event = (
+  id: string,
+  title: string,
+  startAt: Date,
+  endAt: Date,
+): CalendarEvent => new CalendarEvent(id, title, startAt, endAt, false, false);
+
 const createMocks = (
   eventsByCalendar: { own: CalendarEvent[]; hub: CalendarEvent[] },
-  config: Record<string, string> = CONFIG,
+  overrides: {
+    config?: Record<string, string>;
+    invalidIds?: InvalidReminderIds;
+  } = {},
 ) => {
+  const config = overrides.config ?? CONFIG;
+  const invalidIds = overrides.invalidIds ?? { own: [], hub: [] };
   const calendarPort = {
     exists: jest.fn((_calendar: CalendarRef): boolean => true),
     listTimedEvents: jest.fn(
       (calendar: CalendarRef, _from: Date, _to: Date): CalendarEvent[] =>
         calendar.type === 'own' ? eventsByCalendar.own : eventsByCalendar.hub,
     ),
-    createHoldPlaceholder: jest.fn(
-      (_calendar: CalendarRef, _placeholder: HoldPlaceholder): void => {},
-    ),
     deleteEvent: jest.fn(
       (_calendar: CalendarRef, _eventId: string): void => {},
     ),
-    removeHoldPlaceholderReminders: jest.fn(
-      (_calendar: CalendarRef, _eventId: string): void => {},
-    ),
     setEventColor: jest.fn(
-      (
-        _calendar: CalendarRef,
-        _eventId: string,
-        _color: CalendarEventColor,
-      ): void => {},
+      (_calendar: CalendarRef, _eventId: string, _color: string): void => {},
+    ),
+  };
+  const holdPlaceholderPort = {
+    listEventIdsWithInvalidReminders: jest.fn(
+      (calendar: CalendarRef, _from: Date, _to: Date): string[] =>
+        calendar.type === 'own' ? invalidIds.own : invalidIds.hub,
+    ),
+    createHoldPlaceholder: jest.fn(
+      (_calendar: CalendarRef, _placeholder: HoldPlaceholder): void => {},
     ),
   };
   const configPort = {
@@ -60,10 +81,11 @@ const createMocks = (
   };
   const useCase = new CalendarHoldMirrorSyncUseCase(
     calendarPort,
+    holdPlaceholderPort,
     configPort,
     logPort,
   );
-  return { useCase, calendarPort, configPort, logPort };
+  return { useCase, calendarPort, holdPlaceholderPort, configPort, logPort };
 };
 
 describe('CalendarHoldMirrorSyncUseCase', () => {
@@ -78,140 +100,103 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
       const stalePushStart = new Date('2020-01-03T00:00:00Z');
       const stalePushEnd = new Date('2020-01-03T00:30:00Z');
 
-      const ownEvents: CalendarEvent[] = [
-        new CalendarEvent(
-          'own-standup',
-          'Standup',
-          standupStart,
-          standupEnd,
-          false,
-          false,
-        ),
-        new CalendarEvent(
-          'own-hold-stale',
-          HOLD_TAG,
-          staleHoldStart,
-          staleHoldEnd,
-          false,
-          false,
-        ),
-      ];
-      const hubEvents: CalendarEvent[] = [
-        new CalendarEvent(
-          'hub-external',
-          'External Sync',
-          externalStart,
-          externalEnd,
-          false,
-          false,
-        ),
-        new CalendarEvent(
-          'hub-oldtitle',
-          `${HOLD_TAG} ${OWN_DOMAIN} OldTitle`,
-          stalePushStart,
-          stalePushEnd,
-          false,
-          false,
-        ),
-      ];
-
-      const { useCase, calendarPort, logPort } = createMocks({
-        own: ownEvents,
-        hub: hubEvents,
-      });
+      const { useCase, calendarPort, holdPlaceholderPort, logPort } =
+        createMocks({
+          own: [
+            event('own-standup', 'Standup', standupStart, standupEnd),
+            event('own-hold-stale', HOLD_TAG, staleHoldStart, staleHoldEnd),
+          ],
+          hub: [
+            event('hub-external', 'External Sync', externalStart, externalEnd),
+            event(
+              'hub-oldtitle',
+              `${HOLD_TAG} ${OWN_DOMAIN} OldTitle`,
+              stalePushStart,
+              stalePushEnd,
+            ),
+          ],
+        });
 
       useCase.execute(NOW, OWN_DOMAIN);
 
-      const hub: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
-      const own: CalendarRef = { type: 'own' };
-
       expect(calendarPort.deleteEvent.mock.calls).toEqual([
-        [hub, 'hub-oldtitle'],
-        [own, 'own-hold-stale'],
+        [HUB, 'hub-oldtitle'],
+        [OWN, 'own-hold-stale'],
       ]);
-      expect(calendarPort.createHoldPlaceholder.mock.calls).toEqual([
+      expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([
         [
-          hub,
+          HUB,
           new HoldPlaceholder(
             `${HOLD_TAG} ${OWN_DOMAIN}`,
             standupStart,
             standupEnd,
           ),
         ],
-        [own, new HoldPlaceholder(HOLD_TAG, externalStart, externalEnd)],
+        [OWN, new HoldPlaceholder(HOLD_TAG, externalStart, externalEnd)],
       ]);
       expect(logPort.error.mock.calls).toEqual([]);
     });
 
-    it('logs and performs no calendar mutations when a required config value is missing', () => {
-      const { useCase, calendarPort, logPort } = createMocks(
-        { own: [], hub: [] },
-        {
-          SYNC_DAYS: '90',
-          MEETING_OK_TAG: '#meeting-ok',
-          MEETING_OK_TITLE: 'x',
-        },
-      );
+    it('logs and performs no calendar mutations or listings when a required config value is missing', () => {
+      const { useCase, calendarPort, holdPlaceholderPort, logPort } =
+        createMocks(
+          { own: [], hub: [] },
+          {
+            config: {
+              SYNC_DAYS: '90',
+              MEETING_OK_TAG: '#meeting-ok',
+              MEETING_OK_TITLE: 'x',
+            },
+          },
+        );
 
       useCase.execute(NOW, OWN_DOMAIN);
 
       expect(calendarPort.listTimedEvents.mock.calls).toEqual([]);
-      expect(calendarPort.createHoldPlaceholder.mock.calls).toEqual([]);
+      expect(
+        holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+      ).toEqual([]);
+      expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
       expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
       expect(logPort.error.mock.calls.length).toBe(1);
     });
 
-    it('logs and performs no calendar mutations when SYNC_DAYS is not a positive integer', () => {
-      const { useCase, calendarPort, logPort } = createMocks(
-        { own: [], hub: [] },
-        { ...CONFIG, SYNC_DAYS: 'abc' },
-      );
+    it('logs and performs no calendar mutations or listings when SYNC_DAYS is not a positive integer', () => {
+      const { useCase, calendarPort, holdPlaceholderPort, logPort } =
+        createMocks(
+          { own: [], hub: [] },
+          { config: { ...CONFIG, SYNC_DAYS: 'abc' } },
+        );
 
       useCase.execute(NOW, OWN_DOMAIN);
 
       expect(calendarPort.listTimedEvents.mock.calls).toEqual([]);
+      expect(
+        holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+      ).toEqual([]);
       expect(logPort.error.mock.calls.length).toBe(1);
     });
 
-    it('logs and performs no calendar mutations when the hub calendar is not accessible', () => {
-      const { useCase, calendarPort, logPort } = createMocks({
-        own: [],
-        hub: [],
-      });
+    it('logs and performs no calendar mutations or listings when the hub calendar is not accessible', () => {
+      const { useCase, calendarPort, holdPlaceholderPort, logPort } =
+        createMocks({ own: [], hub: [] });
       calendarPort.exists.mockReturnValue(false);
 
       useCase.execute(NOW, OWN_DOMAIN);
 
       expect(calendarPort.listTimedEvents.mock.calls).toEqual([]);
-      expect(calendarPort.createHoldPlaceholder.mock.calls).toEqual([]);
+      expect(
+        holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+      ).toEqual([]);
+      expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
       expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
       expect(logPort.error.mock.calls.length).toBe(1);
     });
 
     it('enumerates each calendar exactly once per run', () => {
-      const sharedStart = new Date('2020-01-04T09:00:00Z');
-      const sharedEnd = new Date('2020-01-04T10:00:00Z');
       const { useCase, calendarPort } = createMocks({
-        own: [
-          new CalendarEvent(
-            'own-event',
-            'Own meeting',
-            sharedStart,
-            sharedEnd,
-            false,
-            false,
-          ),
-        ],
-        hub: [
-          new CalendarEvent(
-            'hub-event',
-            'Hub meeting',
-            sharedStart,
-            sharedEnd,
-            false,
-            false,
-          ),
-        ],
+        own: [event('own-event', 'Own meeting', START, END)],
+        hub: [event('hub-event', 'Hub meeting', START, END)],
       });
 
       useCase.execute(NOW, OWN_DOMAIN);
@@ -224,39 +209,15 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
     });
 
     it('does not push a hold placeholder for an own event already present as a direct non-hold invite on the hub at the exact same time', () => {
-      const meetingStart = new Date('2020-01-01T09:00:00Z');
-      const meetingEnd = new Date('2020-01-01T09:30:00Z');
-
-      const ownEvents: CalendarEvent[] = [
-        new CalendarEvent(
-          'own-meeting',
-          'Weekly scrum planning',
-          meetingStart,
-          meetingEnd,
-          false,
-          false,
-        ),
-      ];
-      const hubEvents: CalendarEvent[] = [
-        new CalendarEvent(
-          'hub-direct-invite',
-          'Weekly scrum planning',
-          meetingStart,
-          meetingEnd,
-          false,
-          false,
-        ),
-      ];
-
-      const { useCase, calendarPort } = createMocks({
-        own: ownEvents,
-        hub: hubEvents,
+      const { useCase, holdPlaceholderPort } = createMocks({
+        own: [event('own-meeting', 'Weekly scrum planning', START, END)],
+        hub: [event('hub-direct-invite', 'Weekly scrum planning', START, END)],
       });
 
       useCase.execute(NOW, OWN_DOMAIN);
 
       const pushedToHubCalls =
-        calendarPort.createHoldPlaceholder.mock.calls.filter(
+        holdPlaceholderPort.createHoldPlaceholder.mock.calls.filter(
           ([calendar]: [CalendarRef, HoldPlaceholder]) =>
             calendar.type === 'hub',
         );
@@ -266,77 +227,47 @@ describe('CalendarHoldMirrorSyncUseCase', () => {
 });
 
 describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
-  const hub: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
-  const own: CalendarRef = { type: 'own' };
-  const START = new Date('2020-01-01T09:00:00Z');
-  const END = new Date('2020-01-01T09:30:00Z');
-
   it('deletes every copy of a duplicated hub placeholder but one, and creates none, when the key is desired', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent('own-standup', 'Standup', START, END, false, false),
-      ],
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks({
+      own: [event('own-standup', 'Standup', START, END)],
       hub: [
-        new CalendarEvent(
-          'hub-placeholder-b',
-          `${HOLD_TAG} ${OWN_DOMAIN}`,
-          START,
-          END,
-          false,
-          false,
-        ),
-        new CalendarEvent(
-          'hub-placeholder-a',
-          `${HOLD_TAG} ${OWN_DOMAIN}`,
-          START,
-          END,
-          false,
-          false,
-        ),
+        event('hub-placeholder-b', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+        event('hub-placeholder-a', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
       ],
     });
 
     useCase.execute(NOW, OWN_DOMAIN);
 
     expect(calendarPort.deleteEvent.mock.calls).toEqual([
-      [hub, 'hub-placeholder-b'],
+      [HUB, 'hub-placeholder-b'],
     ]);
     expect(
-      calendarPort.createHoldPlaceholder.mock.calls.filter(
+      holdPlaceholderPort.createHoldPlaceholder.mock.calls.filter(
         ([calendar]: [CalendarRef, HoldPlaceholder]) => calendar.type === 'hub',
       ),
     ).toEqual([]);
   });
 
   it('keeps every own hold placeholder whose key is desired on the pull side', () => {
-    const { useCase, calendarPort } = createMocks({
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks({
       own: [
-        new CalendarEvent('own-hold-a', HOLD_TAG, START, END, false, false),
-        new CalendarEvent('own-hold-b', HOLD_TAG, START, END, false, false),
+        event('own-hold-a', HOLD_TAG, START, END),
+        event('own-hold-b', HOLD_TAG, START, END),
       ],
-      hub: [
-        new CalendarEvent(
-          'hub-external',
-          'External Sync',
-          START,
-          END,
-          false,
-          false,
-        ),
-      ],
+      hub: [event('hub-external', 'External Sync', START, END)],
     });
 
     useCase.execute(NOW, OWN_DOMAIN);
 
     expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
-    expect(calendarPort.createHoldPlaceholder.mock.calls).toEqual([]);
+    expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
   });
 
   it('deletes every own hold placeholder whose key is no longer desired on the pull side', () => {
     const { useCase, calendarPort } = createMocks({
       own: [
-        new CalendarEvent('own-hold-a', HOLD_TAG, START, END, false, false),
-        new CalendarEvent('own-hold-b', HOLD_TAG, START, END, false, false),
+        event('own-hold-a', HOLD_TAG, START, END),
+        event('own-hold-b', HOLD_TAG, START, END),
       ],
       hub: [],
     });
@@ -344,8 +275,8 @@ describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
     useCase.execute(NOW, OWN_DOMAIN);
 
     expect(calendarPort.deleteEvent.mock.calls).toEqual([
-      [own, 'own-hold-a'],
-      [own, 'own-hold-b'],
+      [OWN, 'own-hold-a'],
+      [OWN, 'own-hold-b'],
     ]);
   });
 
@@ -353,21 +284,17 @@ describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
     const { useCase, calendarPort } = createMocks({
       own: [],
       hub: [
-        new CalendarEvent(
+        event(
           'hub-placeholder-a',
           `${HOLD_TAG} ${OWN_DOMAIN} Gone`,
           START,
           END,
-          false,
-          false,
         ),
-        new CalendarEvent(
+        event(
           'hub-placeholder-b',
           `${HOLD_TAG} ${OWN_DOMAIN} Gone`,
           START,
           END,
-          false,
-          false,
         ),
       ],
     });
@@ -375,413 +302,264 @@ describe('CalendarHoldMirrorSyncUseCase hold placeholder duplicates', () => {
     useCase.execute(NOW, OWN_DOMAIN);
 
     expect(calendarPort.deleteEvent.mock.calls).toEqual([
-      [hub, 'hub-placeholder-a'],
-      [hub, 'hub-placeholder-b'],
+      [HUB, 'hub-placeholder-a'],
+      [HUB, 'hub-placeholder-b'],
     ]);
   });
 });
 
-describe('CalendarHoldMirrorSyncUseCase reminder repair and failure handling', () => {
-  const HUB: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
-  const OWN: CalendarRef = { type: 'own' };
-  const meetingStart = new Date('2020-01-02T10:00:00Z');
-  const meetingEnd = new Date('2020-01-02T11:00:00Z');
-  const hubMeeting = new CalendarEvent(
-    'hub-meeting',
-    'Meeting',
-    meetingStart,
-    meetingEnd,
-    false,
-    false,
+describe('CalendarHoldMirrorSyncUseCase invalid reminders on managed placeholders', () => {
+  it('requests the reminder listing for the own and the hub calendar over the sync window', () => {
+    const { useCase, holdPlaceholderPort } = createMocks({ own: [], hub: [] });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(
+      holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+    ).toEqual(
+      expect.arrayContaining([
+        [OWN, NOW, WINDOW_END],
+        [HUB, NOW, WINDOW_END],
+      ]),
+    );
+    expect(
+      holdPlaceholderPort.listEventIdsWithInvalidReminders.mock.calls,
+    ).toHaveLength(2);
+  });
+
+  it('deletes nothing and creates nothing when no managed placeholder has invalid reminders', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks({
+      own: [
+        event('own-standup', 'Standup', START, END),
+        event('own-hold', HOLD_TAG, MEETING_START, MEETING_END),
+      ],
+      hub: [
+        event('hub-placeholder', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+        event('hub-external', 'External Sync', MEETING_START, MEETING_END),
+      ],
+    });
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
+    expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
+  });
+
+  it.each([
+    {
+      name: 'recreates an invalid kept own pull placeholder with the same title, start and end',
+      ownEvents: [event('own-hold', HOLD_TAG, MEETING_START, MEETING_END)],
+      hubEvents: [
+        event('hub-external', 'External Sync', MEETING_START, MEETING_END),
+      ],
+      invalidIds: { own: ['own-hold'], hub: [] },
+      expectedDeletes: [[OWN, 'own-hold']],
+      expectedCreates: [
+        [OWN, new HoldPlaceholder(HOLD_TAG, MEETING_START, MEETING_END)],
+      ],
+    },
+    {
+      name: 'recreates an invalid kept hub push placeholder with the same title, start and end',
+      ownEvents: [event('own-standup', 'Standup', START, END)],
+      hubEvents: [
+        event('hub-placeholder', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+      ],
+      invalidIds: { own: [], hub: ['hub-placeholder'] },
+      expectedDeletes: [[HUB, 'hub-placeholder']],
+      expectedCreates: [
+        [HUB, new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END)],
+      ],
+    },
+  ])(
+    '$name',
+    ({
+      ownEvents,
+      hubEvents,
+      invalidIds,
+      expectedDeletes,
+      expectedCreates,
+    }) => {
+      const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+        { own: ownEvents, hub: hubEvents },
+        { invalidIds },
+      );
+
+      useCase.execute(NOW, OWN_DOMAIN);
+
+      expect(calendarPort.deleteEvent.mock.calls).toEqual(expectedDeletes);
+      expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual(
+        expectedCreates,
+      );
+    },
   );
 
-  it('removes reminders from an own placeholder that lacks the marker', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent(
-          'own-hold',
-          HOLD_TAG,
-          meetingStart,
-          meetingEnd,
-          false,
-          false,
-          false,
-        ),
-      ],
-      hub: [hubMeeting],
-    });
-
-    useCase.execute(NOW, OWN_DOMAIN);
-
-    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
-      OWN,
-      'own-hold',
+  it('deletes an invalid placeholder before creating its replacement', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [event('own-hold', HOLD_TAG, MEETING_START, MEETING_END)],
+        hub: [
+          event('hub-external', 'External Sync', MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: ['own-hold'], hub: [] } },
     );
-  });
-
-  it('does not touch an own placeholder that already carries the marker', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent(
-          'own-hold',
-          HOLD_TAG,
-          meetingStart,
-          meetingEnd,
-          false,
-          false,
-          true,
-        ),
-      ],
-      hub: [hubMeeting],
-    });
 
     useCase.execute(NOW, OWN_DOMAIN);
 
-    expect(calendarPort.removeHoldPlaceholderReminders).not.toHaveBeenCalled();
-    expect(calendarPort.createHoldPlaceholder).not.toHaveBeenCalled();
+    const deleteOrder = calendarPort.deleteEvent.mock.invocationCallOrder[0];
+    const createOrder =
+      holdPlaceholderPort.createHoldPlaceholder.mock.invocationCallOrder[0];
+    expect(deleteOrder).toBeLessThan(createOrder);
   });
 
-  it('removes reminders from a kept hub placeholder that lacks the marker', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent(
-          'own-standup',
-          'Standup',
-          meetingStart,
-          meetingEnd,
-          false,
-          false,
-        ),
+  it.each([
+    {
+      name: 'deletes an invalid placeholder that is already deleted as stale, and does not recreate it',
+      ownEvents: [event('own-hold-stale', HOLD_TAG, STALE_START, STALE_END)],
+      hubEvents: [],
+      invalidIds: { own: ['own-hold-stale'], hub: [] },
+      expectedDeletes: [[OWN, 'own-hold-stale']],
+    },
+    {
+      name: 'deletes an invalid duplicate hub placeholder once, and does not recreate it',
+      ownEvents: [event('own-standup', 'Standup', START, END)],
+      hubEvents: [
+        event('hub-placeholder-a', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+        event('hub-placeholder-b', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
       ],
-      hub: [
-        new CalendarEvent(
-          'hub-hold',
-          `${HOLD_TAG} ${OWN_DOMAIN}`,
-          meetingStart,
-          meetingEnd,
-          false,
-          false,
-        ),
-      ],
-    });
-
-    useCase.execute(NOW, OWN_DOMAIN);
-
-    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
-      HUB,
-      'hub-hold',
+      invalidIds: { own: [], hub: ['hub-placeholder-b'] },
+      expectedDeletes: [[HUB, 'hub-placeholder-b']],
+    },
+  ])('$name', ({ ownEvents, hubEvents, invalidIds, expectedDeletes }) => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      { own: ownEvents, hub: hubEvents },
+      { invalidIds },
     );
-    expect(calendarPort.deleteEvent).not.toHaveBeenCalled();
-  });
-
-  it('does not remove reminders from a placeholder that reconciliation deletes', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent(
-          'stale-hold',
-          HOLD_TAG,
-          new Date('2020-01-05T00:00:00Z'),
-          new Date('2020-01-05T00:30:00Z'),
-          false,
-          false,
-        ),
-      ],
-      hub: [],
-    });
 
     useCase.execute(NOW, OWN_DOMAIN);
 
-    expect(calendarPort.deleteEvent).toHaveBeenCalledWith(OWN, 'stale-hold');
-    expect(calendarPort.removeHoldPlaceholderReminders).not.toHaveBeenCalled();
+    expect(calendarPort.deleteEvent.mock.calls).toEqual(expectedDeletes);
+    expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
   });
 
-  it('keeps running after a create fails and throws an error naming the failed item', () => {
-    const laterStart = new Date('2020-01-03T10:00:00Z');
-    const laterEnd = new Date('2020-01-03T11:00:00Z');
-    const { useCase, calendarPort } = createMocks({
-      own: [],
-      hub: [
-        hubMeeting,
-        new CalendarEvent(
-          'hub-later',
-          'Later',
-          laterStart,
-          laterEnd,
-          false,
-          false,
-        ),
-      ],
-    });
-    calendarPort.createHoldPlaceholder.mockImplementationOnce(() => {
-      throw new Error('quota exceeded');
-    });
+  it('leaves valid managed placeholders and invalid events that are not managed untouched', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-standup', 'Standup', START, END),
+          event('own-hold', HOLD_TAG, MEETING_START, MEETING_END),
+        ],
+        hub: [
+          event('hub-placeholder', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+          event('hub-external', 'External Sync', MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: ['unrelated-own'], hub: ['hub-external'] } },
+    );
+
+    useCase.execute(NOW, OWN_DOMAIN);
+
+    expect(calendarPort.deleteEvent.mock.calls).toEqual([]);
+    expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([]);
+  });
+
+  it('does not delete or recreate an invalid placeholder whose delete for recreation fails, and still processes the other items', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-standup', 'Standup', START, END),
+          event('own-hold', HOLD_TAG, MEETING_START, MEETING_END),
+        ],
+        hub: [
+          event('hub-placeholder', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+          event('hub-external', 'External Sync', MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: ['own-hold'], hub: ['hub-placeholder'] } },
+    );
+    calendarPort.deleteEvent.mockImplementation(
+      (_calendar: CalendarRef, eventId: string): void => {
+        if (eventId === 'own-hold') {
+          throw new Error('delete failed');
+        }
+      },
+    );
+
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/own-hold/);
+    expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([
+      [HUB, new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END)],
+    ]);
+    expect(calendarPort.deleteEvent.mock.calls).toEqual([
+      [HUB, 'hub-placeholder'],
+      [OWN, 'own-hold'],
+    ]);
+  });
+
+  it('collects a failed recreation create, still performs the other creates, and throws an error naming the failed placeholder', () => {
+    const { useCase, holdPlaceholderPort } = createMocks(
+      {
+        own: [
+          event('own-standup', 'Standup', START, END),
+          event('own-hold', HOLD_TAG, MEETING_START, MEETING_END),
+        ],
+        hub: [
+          event('hub-placeholder', `${HOLD_TAG} ${OWN_DOMAIN}`, START, END),
+          event('hub-external', 'External Sync', MEETING_START, MEETING_END),
+        ],
+      },
+      { invalidIds: { own: ['own-hold'], hub: ['hub-placeholder'] } },
+    );
+    holdPlaceholderPort.createHoldPlaceholder.mockImplementation(
+      (_calendar: CalendarRef, placeholder: HoldPlaceholder): void => {
+        if (placeholder.startAt.getTime() === MEETING_START.getTime()) {
+          throw new Error('quota exceeded');
+        }
+      },
+    );
 
     expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(
       /2020-01-02T10:00:00\.000Z.*quota exceeded/,
     );
-    expect(calendarPort.createHoldPlaceholder).toHaveBeenCalledTimes(2);
+    expect(holdPlaceholderPort.createHoldPlaceholder.mock.calls).toEqual([
+      [HUB, new HoldPlaceholder(`${HOLD_TAG} ${OWN_DOMAIN}`, START, END)],
+      [OWN, new HoldPlaceholder(HOLD_TAG, MEETING_START, MEETING_END)],
+    ]);
   });
 
-  it('names every failed reminder removal and still deletes the other stale placeholder', () => {
-    const { useCase, calendarPort } = createMocks({
+  it('keeps running after a desired create fails and throws an error naming the failed item', () => {
+    const laterStart = new Date('2020-01-03T10:00:00Z');
+    const laterEnd = new Date('2020-01-03T11:00:00Z');
+    const { useCase, holdPlaceholderPort } = createMocks({
       own: [
-        new CalendarEvent(
-          'own-hold',
-          HOLD_TAG,
-          meetingStart,
-          meetingEnd,
-          false,
-          false,
-          false,
-        ),
-        new CalendarEvent(
-          'stale-hold',
-          HOLD_TAG,
-          new Date('2020-01-05T00:00:00Z'),
-          new Date('2020-01-05T00:30:00Z'),
-          false,
-          false,
-          false,
-        ),
+        event('own-standup', 'Standup', START, END),
+        event('own-later', 'Later', laterStart, laterEnd),
       ],
-      hub: [hubMeeting],
+      hub: [],
     });
-    calendarPort.removeHoldPlaceholderReminders.mockImplementationOnce(() => {
-      throw new Error('Service invoked too many times');
-    });
+    holdPlaceholderPort.createHoldPlaceholder.mockImplementation(
+      (_calendar: CalendarRef, placeholder: HoldPlaceholder): void => {
+        if (placeholder.startAt.getTime() === START.getTime()) {
+          throw new Error('quota exceeded');
+        }
+      },
+    );
 
-    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/own-hold/);
-    expect(calendarPort.deleteEvent).toHaveBeenCalledWith(OWN, 'stale-hold');
+    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(
+      /2020-01-01T09:00:00\.000Z.*quota exceeded/,
+    );
+    expect(holdPlaceholderPort.createHoldPlaceholder).toHaveBeenCalledTimes(2);
   });
 
-  it('throws when a delete fails and still performs the remaining creates', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent(
-          'stale-hold',
-          HOLD_TAG,
-          new Date('2020-01-05T00:00:00Z'),
-          new Date('2020-01-05T00:30:00Z'),
-          false,
-          false,
-          true,
-        ),
-      ],
-      hub: [hubMeeting],
+  it('throws when a reconciliation delete fails and still performs the remaining creates', () => {
+    const { useCase, calendarPort, holdPlaceholderPort } = createMocks({
+      own: [event('stale-hold', HOLD_TAG, STALE_START, STALE_END)],
+      hub: [event('hub-external', 'External Sync', MEETING_START, MEETING_END)],
     });
     calendarPort.deleteEvent.mockImplementationOnce(() => {
       throw new Error('already deleted');
     });
 
     expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/stale-hold/);
-    expect(calendarPort.createHoldPlaceholder).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('CalendarHoldMirrorSyncUseCase reminder repair scope and cap', () => {
-  const HUB: CalendarRef = { type: 'hub', hubCalendarId: HUB_CALENDAR_ID };
-  const OWN: CalendarRef = { type: 'own' };
-  const hour = (n: number): Date => new Date(Date.UTC(2020, 0, 2, n));
-  const meeting = (id: string, n: number): CalendarEvent =>
-    new CalendarEvent(id, 'Meeting', hour(n), hour(n + 1), false, false);
-  const unmarkedOwnHold = (id: string, n: number): CalendarEvent =>
-    new CalendarEvent(id, HOLD_TAG, hour(n), hour(n + 1), false, false, false);
-  const unmarkedHubHold = (id: string, n: number): CalendarEvent =>
-    new CalendarEvent(
-      id,
-      `${HOLD_TAG} ${OWN_DOMAIN}`,
-      hour(n),
-      hour(n + 1),
-      false,
-      false,
-      false,
-    );
-  const ownStandup = (n: number): CalendarEvent =>
-    new CalendarEvent(
-      'own-standup',
-      'Standup',
-      hour(n),
-      hour(n + 1),
-      false,
-      false,
-    );
-
-  it('still removes reminders from an own placeholder whose delete failed', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [unmarkedOwnHold('stale', 30)],
-      hub: [],
-    });
-    calendarPort.deleteEvent.mockImplementationOnce(() => {
-      throw new Error('delete failed');
-    });
-
-    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/stale/);
-    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
-      OWN,
-      'stale',
-    );
-  });
-
-  it('still removes reminders from a duplicate hub placeholder whose delete failed', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [ownStandup(3)],
-      hub: [unmarkedHubHold('hub-dup', 3), unmarkedHubHold('hub-keep', 3)],
-    });
-    calendarPort.deleteEvent.mockImplementation(
-      (_calendar: CalendarRef, eventId: string) => {
-        if (eventId === 'hub-keep') {
-          throw new Error('delete failed');
-        }
-      },
-    );
-
-    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(/hub-keep/);
-    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
-      HUB,
-      'hub-keep',
-    );
-  });
-
-  it('does not remove reminders from a placeholder whose delete succeeded', () => {
-    const { useCase, calendarPort } = createMocks({
-      own: [unmarkedOwnHold('stale', 30)],
-      hub: [],
-    });
-
-    useCase.execute(NOW, OWN_DOMAIN);
-
-    expect(calendarPort.deleteEvent).toHaveBeenCalledWith(OWN, 'stale');
-    expect(calendarPort.removeHoldPlaceholderReminders).not.toHaveBeenCalled();
-  });
-
-  it('spends the per-run cap on the earliest starts across both calendars', () => {
-    const { calendarPort, configPort, logPort } = createMocks({
-      own: [
-        ownStandup(2),
-        unmarkedOwnHold('own-h9', 9),
-        unmarkedOwnHold('own-h5', 5),
-      ],
-      hub: [
-        meeting('hub-h5', 5),
-        meeting('hub-h9', 9),
-        unmarkedHubHold('hub-h2', 2),
-      ],
-    });
-    const useCase = new CalendarHoldMirrorSyncUseCase(
-      calendarPort,
-      configPort,
-      logPort,
-      2,
-    );
-
-    useCase.execute(NOW, OWN_DOMAIN);
-
-    expect(calendarPort.removeHoldPlaceholderReminders.mock.calls).toEqual([
-      [HUB, 'hub-h2'],
-      [OWN, 'own-h5'],
-    ]);
-  });
-
-  it('repairs at most MAX_REMINDER_REPAIRS_PER_RUN placeholders, earliest first', () => {
-    const count = MAX_REMINDER_REPAIRS_PER_RUN + 1;
-    const indexes = Array.from({ length: count }, (_, index) => index);
-    const { useCase, calendarPort } = createMocks({
-      own: [...indexes]
-        .reverse()
-        .map((index) => unmarkedOwnHold(`own-${index}`, index)),
-      hub: indexes.map((index) => meeting(`hub-${index}`, index)),
-    });
-
-    useCase.execute(NOW, OWN_DOMAIN);
-
-    const repairedIds =
-      calendarPort.removeHoldPlaceholderReminders.mock.calls.map(
-        (call) => call[1],
-      );
-    expect(repairedIds).toEqual(
-      indexes
-        .slice(0, MAX_REMINDER_REPAIRS_PER_RUN)
-        .map((index) => `own-${index}`),
-    );
-  });
-
-  it('repairs reminders of existing placeholders before any create call', () => {
-    const keptStart = new Date('2020-01-02T10:00:00Z');
-    const keptEnd = new Date('2020-01-02T11:00:00Z');
-    const newStart = new Date('2020-01-03T10:00:00Z');
-    const newEnd = new Date('2020-01-03T11:00:00Z');
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent(
-          'own-kept-meeting',
-          'Standup',
-          keptStart,
-          keptEnd,
-          false,
-          false,
-        ),
-        new CalendarEvent(
-          'own-new-meeting',
-          'Planning',
-          newStart,
-          newEnd,
-          false,
-          false,
-        ),
-      ],
-      hub: [
-        new CalendarEvent(
-          'hub-kept-hold',
-          `${HOLD_TAG} ${OWN_DOMAIN}`,
-          keptStart,
-          keptEnd,
-          false,
-          false,
-          false,
-        ),
-      ],
-    });
-
-    useCase.execute(NOW, OWN_DOMAIN);
-
-    expect(calendarPort.removeHoldPlaceholderReminders).toHaveBeenCalledWith(
-      HUB,
-      'hub-kept-hold',
-    );
-    expect(calendarPort.createHoldPlaceholder).toHaveBeenCalledTimes(1);
-    const lastRepairCall = Math.max(
-      ...calendarPort.removeHoldPlaceholderReminders.mock.invocationCallOrder,
-    );
-    const firstCreateCall = Math.min(
-      ...calendarPort.createHoldPlaceholder.mock.invocationCallOrder,
-    );
-    expect(lastRepairCall).toBeLessThan(firstCreateCall);
-  });
-
-  it('fails the run naming both errors when a created placeholder cannot be repaired or deleted', () => {
-    const newStart = new Date('2020-01-03T10:00:00Z');
-    const newEnd = new Date('2020-01-03T11:00:00Z');
-    const { useCase, calendarPort } = createMocks({
-      own: [
-        new CalendarEvent(
-          'own-new-meeting',
-          'Planning',
-          newStart,
-          newEnd,
-          false,
-          false,
-        ),
-      ],
-      hub: [],
-    });
-    calendarPort.createHoldPlaceholder.mockImplementationOnce(() => {
-      throw new Error(
-        'Could not remove reminders from hold placeholder "[HOLD] example.com" (reminder failed), and deleting the created event also failed (delete failed)',
-      );
-    });
-
-    expect(() => useCase.execute(NOW, OWN_DOMAIN)).toThrow(
-      /reminder failed[\s\S]*delete failed/,
-    );
+    expect(holdPlaceholderPort.createHoldPlaceholder).toHaveBeenCalledTimes(1);
   });
 });

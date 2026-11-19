@@ -27,9 +27,6 @@ const createMocks = (
     deleteEvent: jest.fn(
       (_calendar: CalendarRef, _eventId: string): void => {},
     ),
-    removeHoldPlaceholderReminders: jest.fn(
-      (_calendar: CalendarRef, _eventId: string): void => {},
-    ),
     setEventColor: jest.fn(
       (
         _calendar: CalendarRef,
