@@ -83,7 +83,7 @@ describe('dependency version pins', () => {
     '@swc/core': '1.16.18',
     '@types/google-apps-script': '2.0.13',
     jest: '30.5.2',
-    prettier: '3.9.10',
+    prettier: '3.10.1',
   };
 
   it.each(Object.entries(targetVersionsByPackageName))(
